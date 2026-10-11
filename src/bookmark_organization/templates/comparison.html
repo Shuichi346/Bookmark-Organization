@@ -1,0 +1,10 @@
+<div class="table-scroll"><table class="comparison-table"><thead><tr><th>{{ t('original_name') }}</th><th>{{ t('suggested_name') }}</th><th>{{ t('original_location') }}</th><th>{{ t('new_location') }}</th><th>{{ t('status') }}</th><th>{{ t('details') }}</th><th>{{ t('save') }}</th></tr></thead>
+<tbody>{% for row in rows %}
+<tr data-bookmark="{{ row.id }}"><td><strong>{{ row.before.name }}</strong><div class="muted url-cell">{{ row.before.url }}</div></td>
+<td><label class="visually-hidden" for="name-{{ row.id }}">{{ t('suggested_name') }}</label><input id="name-{{ row.id }}" class="edit-name" value="{{ row.after.name }}" maxlength="200"></td>
+<td>{{ row.old_path }}</td><td><label class="visually-hidden" for="parent-{{ row.id }}">{{ t('new_location') }}</label><select id="parent-{{ row.id }}" class="edit-parent">{% for id,name in parents %}<option value="{{ id }}" {{ 'selected' if row.after.parent == id }}>{{ name }}</option>{% endfor %}</select></td>
+<td>{{ t(row.item.state) }} · {{ t(row.item.retrieval.status) if row.item.retrieval else t('pending') }}</td>
+<td>{% if row.item.analysis %}<details><summary>{{ row.item.analysis.type }}</summary><p>{{ row.item.analysis.summary }}</p><p>{{ row.item.analysis.purpose }}</p><p>{{ row.item.analysis.tags | join(', ') }}</p></details>{% elif row.item.error %}{{ t(row.item.error) }}{% endif %}</td>
+<td><button class="save-item" type="button">{{ t('save') }}</button></td></tr>
+{% else %}<tr><td colspan="7">{{ t('no_results') }}</td></tr>{% endfor %}</tbody></table></div>
+<nav class="pagination" aria-label="{{ t('page', page=page,pages=pages) }}"><button data-page="{{ page-1 }}" {{ 'disabled' if page<=1 }}>{{ t('previous') }}</button><span>{{ t('page',page=page,pages=pages) }}</span><button data-page="{{ page+1 }}" {{ 'disabled' if page>=pages }}>{{ t('next') }}</button></nav>

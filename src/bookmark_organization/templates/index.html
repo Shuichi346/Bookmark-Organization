@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="csrf-token" content="{{ csrf }}">
+<title>{{ t('brand') }}</title>
+{% for asset in css %}<link rel="stylesheet" href="/static/{{ asset }}">{% endfor %}
+<script type="module" src="/static/{{ js }}"></script>
+</head>
+<body>
+<header><a class="brand" href="/">{{ t('brand') }}</a><div class="header-controls">
+<button id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings-panel">{{ t('settings') }}</button>
+<label class="visually-hidden" for="language">{{ t('language') }}</label>
+<select id="language"><option value="auto" {{ 'selected' if preference not in ['en','ja'] }}>{{ t('automatic') }}</option><option value="en" {{ 'selected' if preference == 'en' }}>English</option><option value="ja" {{ 'selected' if preference == 'ja' }}>日本語</option></select>
+</div></header>
+<div id="alert" class="alert" role="alert" hidden></div>
+<div class="workspace" data-project="{{ project or '' }}">
+<aside>
+<form id="import-form"><label for="html-file">{{ t('file') }}</label><input id="html-file" name="file" type="file" accept=".html,.htm" required><button class="primary">{{ t('import') }}</button></form>
+{% if project %}
+<p class="muted">{{ t('total') }}: {{ total }}</p>
+<a class="small-link" href="/api/projects/{{ project }}/original">{{ t('original') }}</a>
+<h2 class="sidebar-heading">{{ t('scope') }}</h2>
+<label class="tree-row"><input id="scope-all" type="checkbox" checked>{{ t('all') }}</label>
+{% macro folders(parent, depth) %}
+{% for n in tree if n.parent == parent %}
+{% if n.kind == 'folder' %}
+<div class="tree-level"><label class="tree-row"><input class="folder-check" type="checkbox" value="{{ n.id }}"><span>{{ n.name }}</span></label>{{ folders(n.id, depth+1) }}</div>
+{% endif %}
+{% endfor %}
+{% endmacro %}
+<div id="folder-tree">{{ folders('root', 0) }}</div>
+{% endif %}
+</aside>
+<main>
+<section id="settings-panel" hidden>
+<h1>{{ t('settings') }}</h1><p class="muted">{{ t('model_help') }}</p>
+<form id="settings-form">
+{% for key in ['generation','embedding'] %}
+<fieldset><legend>{{ t('generation_model' if key == 'generation' else 'embedding_model') }}</legend>
+<div class="form-grid"><label>{{ t('runtime') }}<select name="{{ key }}.runtime"><option value="lmstudio" {{ 'selected' if settings[key].runtime == 'lmstudio' }}>LM Studio</option><option value="ollama" {{ 'selected' if settings[key].runtime == 'ollama' }}>Ollama</option></select></label>
+<label>{{ t('endpoint') }}<input name="{{ key }}.base_url" value="{{ settings[key].base_url }}" required></label>
+<label class="full">{{ t('generation_model' if key == 'generation' else 'embedding_model') }}<select name="{{ key }}.model"><option>{{ settings[key].model }}</option></select></label></div>
+</fieldset>
+{% endfor %}
+<fieldset><legend>{{ t('inference_settings') }}</legend>
+<label>{{ t('inference_source') }}<select id="inference-source" name="inference.source">
+<option value="runtime" {{ 'selected' if settings.inference.source == 'runtime' }}>{{ t('runtime_defaults') }}</option>
+<option value="app" {{ 'selected' if settings.inference.source == 'app' }}>{{ t('app_defaults') }}</option>
+</select></label><p class="muted">{{ t('inference_help') }}</p>
+<fieldset id="inference-controls" {{ 'disabled' if settings.inference.source == 'runtime' }}><legend>{{ t('app_defaults') }}</legend><div class="form-grid">
+<label>{{ t('thinking') }}<select name="inference.thinking"><option value="on" {{ 'selected' if settings.inference.thinking }}>{{ t('on') }}</option><option value="off" {{ 'selected' if not settings.inference.thinking }}>{{ t('off') }}</option></select></label>
+<label>{{ t('temperature') }}<input name="inference.temperature" type="number" min="0" max="2" step="0.01" value="{{ settings.inference.temperature }}" required></label>
+{% for key, default, minimum, maximum, step in [('top_k',20,0,1000,1),('top_p',0.95,0.01,1,0.01),('min_p',0,0,1,0.01),('repeat_penalty',1.1,0.01,3,0.01),('presence_penalty',0,-2,2,0.01)] %}
+<div><label class="check-label"><input name="enable.{{ key }}" type="checkbox" {{ 'checked' if settings.inference[key] is not none }}>{{ t(key) }}</label><label><span class="visually-hidden">{{ t(key) }}</span><input name="inference.{{ key }}" type="number" min="{{ minimum }}" max="{{ maximum }}" step="{{ step }}" value="{{ settings.inference[key] if settings.inference[key] is not none else default }}"></label></div>
+{% endfor %}
+</div></fieldset></fieldset>
+<details><summary>{{ t('advanced') }}</summary><div class="form-grid">
+{% for key in ['overall_timeout','connect_timeout','read_timeout','max_bytes','redirects','retrieval_concurrency','context_chars','output_tokens','distance_threshold','api_timeout'] %}
+<label>{{ t(key) }}<input name="{{ key }}" type="number" step="any" value="{{ settings[key] }}" required></label>
+{% endfor %}</div><label class="check-label"><input name="rendering" type="checkbox" {{ 'checked' if settings.rendering }}>{{ t('rendering') }}</label></details>
+<div class="actions"><button id="probe" type="button">{{ t('probe') }}</button><button class="primary">{{ t('save') }}</button></div>
+<p id="settings-feedback" role="status"></p>
+</form>
+</section>
+<section id="workflow">
+<h1>{{ t('heading') }}</h1><p class="intro">{{ t('intro') }}</p>
+{% if not project %}
+<div class="empty-state"><p>{{ t('empty') }}</p><button id="choose-file" class="primary">{{ t('import') }}</button></div>
+{% else %}
+<form id="scope-form"><div class="selection-band"><strong id="selected-count">{{ t('selected', count=total) }}</strong>
+<label>{{ t('destination') }}<select id="destination"><option value="root">{{ t('new_region') }}</option></select></label></div>
+<button class="primary">{{ t('analyze') }}</button></form>
+{% if job %}
+<div id="job-region" hx-get="/ui/jobs/{{ job.id }}" hx-trigger="load, refresh" hx-swap="innerHTML">{% include 'progress.html' %}</div>
+{% endif %}
+{% if proposal %}
+<section id="proposal-section" data-proposal="{{ proposal.id }}"><h2>{{ t('review') }}</h2><p class="muted">{{ t('review_intro') }}</p>
+<div class="filters"><label class="visually-hidden" for="search">{{ t('search') }}</label><input id="search" type="search" placeholder="{{ t('search') }}"><label class="visually-hidden" for="status-filter">{{ t('status') }}</label><select id="status-filter"><option value="">{{ t('all_status') }}</option>{% for key in ['complete','retrieval_failed','analysis_failed'] %}<option value="{{ key }}">{{ t(key) }}</option>{% endfor %}</select></div>
+<div id="comparison" hx-get="/ui/proposals/{{ proposal.id }}" hx-trigger="load" hx-swap="innerHTML"></div>
+<p class="integrity">{{ t('integrity_ok') }}</p><a id="export" class="button primary" href="/api/proposals/{{ proposal.id }}/export">{{ t('export') }}</a>
+</section>
+{% endif %}
+{% endif %}
+</section>
+</main>
+</div>
+<script type="application/json" id="messages">{{ messages | tojson }}</script>
+<script type="application/json" id="tree-data">{{ tree | tojson }}</script>
+<script type="application/json" id="settings-data">{{ settings | tojson }}</script>
+</body></html>

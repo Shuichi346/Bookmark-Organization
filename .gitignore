@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+src/bookmark_organization/static/
+data/
+.env
+*.gguf
+.DS_Store
+Thumbs.db

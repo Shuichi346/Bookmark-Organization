@@ -2,26 +2,26 @@
 
 ## Progress Status
 
-This section is the sole authoritative progress checklist. The current request covers reading the referenced conversation, organizing requirements, and saving an implementation plan. Do not begin implementation yet. The implementation items below specify the work to perform when implementation is requested later.
+This section is the sole authoritative progress checklist. Implementation was requested on 2026-10-11. Execute I1–I8 and V1–V4 continuously; no publication, Chrome writes, or model downloads are authorized.
 
 - [x] P1 Read the referenced conversation and distinguish requirements from technical suggestions
 - [x] P2 Inspect the repository, local tools, and relevant official documentation
 - [x] P3 Save the implementation plan and reconcile requirements, dependencies, and acceptance conditions
-- [ ] I1 Define the screen designs and design tokens
-- [ ] I2 Prepare the Python/Node.js environments and startup/build entry points
-- [ ] I3 Implement HTML import/export, original-file preservation, and SQLite persistence
-- [ ] I4 Implement page retrieval and retrieval-failure classification
-- [ ] I5 Implement independent local LLM analysis and embeddings
-- [ ] I6 Implement persistent jobs with pause and resume
-- [ ] I7 Implement semantic organization within the selected scope, proposals, and loss detection
-- [ ] I8 Complete the English/Japanese interface, automatic language selection, and entire workflow
-- [ ] V1 Run static validation and build the frontend
-- [ ] V2 Run targeted tests for preservation, retrieval, LLM isolation, and resumption
-- [ ] V3 Run automated smoke checks against the actual server and interface
-- [ ] V4 Verify analysis, embeddings, and HTML export with the specified real models
+- [x] I1 Define the screen designs and design tokens
+- [x] I2 Prepare the Python/Node.js environments and startup/build entry points
+- [x] I3 Implement HTML import/export, original-file preservation, and SQLite persistence
+- [x] I4 Implement page retrieval and retrieval-failure classification
+- [x] I5 Implement independent local LLM analysis and embeddings
+- [x] I6 Implement persistent jobs with pause and resume
+- [x] I7 Implement semantic organization within the selected scope, proposals, and loss detection
+- [x] I8 Complete the English/Japanese interface, automatic language selection, and entire workflow
+- [x] V1 Run static validation and build the frontend
+- [x] V2 Run targeted tests for preservation, retrieval, LLM isolation, and resumption
+- [x] V3 Run automated smoke checks against the actual server and interface
+- [x] V4 Verify analysis, embeddings, and HTML export with the specified real models
 
-Current: Planning complete — The current requested scope is complete. I1–I8 and V1–V4 have not started.
-Next: Begin I1 when the user requests implementation.
+Current: Complete
+Next: None
 
 During execution, save this section after obtaining completion evidence for each implementation item or verification unit. Do not check an item without implementation or verification evidence. Show the full checklist at the start, phase boundaries, and completion; otherwise show only changed lines and Current/Next. Follow the user's preference for shorter reporting when applicable.
 
@@ -42,19 +42,19 @@ Source: the ChatGPT conversation titled “ブックマーク整理アプリ案�
 | R7 | Treat multiple selected folders as one organization region. Preserve unselected bookmark names, URLs, and placement, and unselected folder structure | I7, V2, V3 |
 | R8 | Never automatically delete bookmarks because of a 404 or inaccessible URL. Retain them in dedicated folders such as 404 | I4, I7, V2, V4 |
 | R9 | Before export, verify counts, individual IDs, URL multisets, and the invariance of out-of-scope data. Block export on any mismatch | I3, I7, V2, V3 |
-| R10 | Use the two specified GGUF models locally. Support both Ollama and LM Studio, with connection settings and model selection | I5, I8, V2, V4 |
+| R10 | Allow user-selected local models for generation and embeddings; use the two specified GGUF models as defaults. Support both Ollama and LM Studio, with connection settings and model selection | I5, I8, V2, V4 |
 | R11 | Export Chrome-compatible HTML and allow the original data and organization results to be reviewed | I3, I7, I8, V2, V3, V4 |
 | R12 | Default interface language mode to Automatic. Display Japanese for a Japanese browser preference and English for other languages. Offer persistent manual English/Japanese overrides | I1, I2, I8, V1, V2, V3 |
 | R13 | Prepare reusable source for a public GitHub repository: English setup documentation, separate translation catalogs, portable configuration, and no private bookmark data or credentials in tracked artifacts | I2, I8, V1 |
 
-Use the following models as the initial selections. An API model ID is not necessarily the same as a GGUF filename. Persist the model ID obtained from the API.
+User clarification (2026-10-11): model choices must be editable, independently for generation and embeddings. Use the following models as the initial selections. An API model ID is not necessarily the same as a GGUF filename. Persist the model ID obtained from the API.
 
 - Content understanding, suggested names, categories, and tags: `Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf` from `HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive`.
 - Semantic comparison and organization assistance: `embeddinggemma-2-Q8_0.gguf` from `unsloth/embeddinggemma-2-GGUF`.
 
 Additional operating qualities adopted for implementation: per-URL state persistence, pause/resume, progress reporting, original-data invariance, visible errors, input and LLM-output validation, keyboard operation, and support for narrow screens. These are design choices adopted from the earlier technical suggestions, not evidence that the user has already verified them on the actual machine.
 
-Outside the current scope: source implementation, dependency installation, model downloads or loading, retrieval or organization of actual bookmarks, and writes to Chrome. Also outside the later product implementation: cloud LLMs, accounts or synchronization services, Chrome extensions, direct Chrome-profile editing, automatic removal of duplicate URLs, and macOS distribution packages. Provide dynamic-page retrieval as a supporting feature, without bypassing login or CAPTCHA.
+Authorized now: source implementation, project dependencies, model loading and bounded synthetic acceptance checks. Actual user bookmarks, model downloads, and Chrome writes remain outside scope. Also outside the later product implementation: cloud LLMs, accounts or synchronization services, Chrome extensions, direct Chrome-profile editing, automatic removal of duplicate URLs, and macOS distribution packages. Provide dynamic-page retrieval as a supporting feature, without bypassing login or CAPTCHA.
 
 ## Current System Evidence and Selected Stack
 
@@ -135,6 +135,10 @@ Default bookmark-originated requests to public HTTP(S) addresses. Hold localhost
 
 Use an OpenAI-compatible client in `llm.py`. Allow separate base URLs and model IDs for generation and embeddings. Default LM Studio to `http://localhost:1234/v1` and Ollama to `http://localhost:11434/v1`. Restrict endpoints to loopback and provide no fallback to external AI services. Confirm in the actual Ollama configuration that cloud-backed models are not used.
 
+User amendments (2026-10-11): Model response waits default to 0 (unlimited), with an editable positive seconds limit. Keep connection/pool/write deadlines finite and page-retrieval deadlines separate. Offer inference-setting source Runtime or Web app (default), with thinking off by default as explicitly requested in the latest amendment. Runtime omits sampling and thinking overrides, letting the model's API defaults apply. App mode controls thinking, temperature, Top K, Top P, Min P, repetition penalty and presence penalty, including explicit disabled sampler values. Snapshot these app settings in each job. The runtime's external defaults can change outside the app; do not claim to snapshot them or inherit a separate LM Studio chat's settings. Keep structured-output and token budgets explicit (default 8192 output tokens, editable up to 65536), independently of sampling source. Allow thinking output to consume this budget and clearly report truncation.
+
+Use LM Studio OpenAI-compatible fields confirmed in the installed 0.4.26 server parser, including `min_p`, `top_k` and `repeat_penalty`. For Ollama chat, use its documented native `/api/chat` endpoint with `options` and `think`, since the OpenAI-compatible route does not expose all samplers from the user's screenshot. Embeddings and model discovery retain their existing APIs. Native Ollama calls remain fresh two-message, no-tools, non-streaming JSON-schema requests; this narrow provider adaptation is authorized by the user's request for actual setting control.
+
 Construct fresh system + user messages for every request and include information about only that URL. Never reuse session IDs or previous response IDs, and never send another URL's analysis or conversation history. Keeping the same model loaded in memory is allowed. Delimit web content as untrusted input data, and do not enable tool calls or arbitrary instruction execution.
 
 Validate summary, type, purpose, suggested name, candidate categories, and tags with Pydantic. Default to descriptive Japanese names while retaining product and library proper names. Fit inputs within the configured context budget and set an output limit. Save invalid JSON, truncated responses, and API failures as analysis failures for that URL; do not repair them using history from another URL. Allow at most one automatic response-repair request, restricted to the same URL. Do not use unlimited SDK retries.
@@ -147,7 +151,7 @@ Name clusters by aggregating candidate categories from individual URL analyses. 
 
 ### Jobs, APIs, and Interface
 
-Manage a single worker and shared HTTP clients through FastAPI lifespan. Persist states in SQLite and commit each item's results separately. Use `pending → fetching → analyzing → embedding → complete` as the normal progression, with explicit retrieval failures, analysis failures, and paused states. On restart, return interrupted items to pending and reuse successful stages. Do not automatically resume external access merely because the application starts; wait for the user's resume action. The pause button prevents the next stage from starting, and in-flight operations must finish within finite timeouts.
+Manage a single worker and shared HTTP clients through FastAPI lifespan. Persist states in SQLite and commit each item's results separately. Use `pending → fetching → analyzing → embedding → complete` as the normal progression, with explicit retrieval failures, analysis failures, and paused states. On restart, return interrupted items to pending and reuse successful stages. Do not automatically resume external access merely because the application starts; wait for the user's resume action. The pause button prevents the next stage from starting. A model request can wait indefinitely when the user-selected response limit is zero; server shutdown cancels the worker, and restart retains paused recovery. Positive model response limits and page retrieval remain bounded.
 
 Prevent competing jobs for the same project. Use database uniqueness and an idempotency token to prevent duplicate job creation. Display total, successful, retrieval-failed, analysis-failed, and remaining counts. Jobs continue within the server when the browser closes; persist pause/resume state in the database.
 
@@ -176,14 +180,14 @@ These stages define construction order, not an MVP that reduces final scope. Com
 
 ## Bounded Automated Verification
 
-Treat this list as the sufficient required verification scope. This is currently a plan only; none of the following checks has run. Because no project commands existed, all commands and test paths below are proposals to create during implementation. Apply a subprocess timeout or equivalent to each command. Do not use watch mode. Capture logs in a temporary location and report only concise success summaries or necessary failure excerpts.
+Treat this list as the sufficient required verification scope. Execution results and attempt counts are recorded below; the checklist remains authoritative. Because no project commands existed, all commands and test paths below are proposals to create during implementation. Apply a subprocess timeout or equivalent to each command. Do not use watch mode. Capture logs in a temporary location and report only concise success summaries or necessary failure excerpts.
 
 | Unit | Command / evidence | Prerequisites / time limit | Pass conditions |
 | --- | --- | --- | --- |
 | V1 | `uv run --locked ruff check src tests`, `uv run --locked ruff format --check src tests`, `uv run --locked ty check src`, `npm run lint`, `npm run typecheck`, `npm run build`; inspect README/configuration and `git ls-files` against the runtime-data exclusions | I2–I8 and lockfiles; 120 seconds per command, 60 seconds for artifact inspection | Lint, formatting, and type checks pass. Build generates the manifest and JS/CSS, and Jinja can reference them. English setup instructions cover both runtimes and language settings; tracked artifacts contain no real bookmark data, credentials, model binaries, or machine-specific product paths |
 | V2 | `uv run --locked pytest -q tests/test_bookmarks.py tests/test_fetching.py tests/test_llm.py tests/test_jobs.py tests/test_organizing.py tests/test_i18n.py` | I3–I8; fake transports and temporary databases only; 180 seconds total | All critical conditions described above pass. Prove that preservation checks do not overlook loss of duplicate-URL bookmarks by considering only a URL set. Verify `ja-JP`, `en-US`, an unsupported language, missing/invalid headers, quality ordering, quality-zero exclusion, manual override precedence, invalid preferences, catalog key/placeholder parity, and no mutation of bookmark data from UI-language changes |
 | V3 | `uv run --locked python tests/smoke_app.py` | Built assets and installed Playwright Chromium; 180 seconds total | Start actual uvicorn with a temporary database, fixtures, and fake AI. Complete import → multiple-folder selection → start → completion → proposal edits → download → reparse. Verify pause/resume entry points, localized error presentation, and out-of-scope invariance. Use deterministic English/Japanese browser contexts to check Automatic mode, manual override persistence after reload, document language, and HTMX/client consistency. Assert no JS exceptions, successful static asset responses, no whole-page overflow beyond the viewport in either locale, and reachable/focusable primary controls. Stop the server and browser in finally |
-| V4 | `uv run --locked python tests/smoke_local_models.py --settings data/settings.json` | Both specified GGUF models loadable in the actual runtime and APIs available; 120 seconds per API call and 600 seconds total | Use two public fixture pages and a 404 fixture to produce independent structured analyses, finite equal-dimension embeddings, a similarity-based proposal, and same-count HTML preserving original URLs. Record actual runtime versions, API model IDs, and their GGUF mappings. Fake output cannot substitute for success |
+| V4 | `uv run --locked python tests/smoke_local_models.py --settings data/settings.json` | Both specified GGUF models loadable in the actual runtime and APIs available; 550 seconds per API response and 1200 seconds total after the user's timeout/settings amendment | Use two public fixture pages (one runtime-default and one app-override request) and a 404 fixture to produce independent structured analyses, finite equal-dimension embeddings, a similarity-based proposal, and same-count HTML preserving original URLs. Record actual runtime versions, API model IDs, and their GGUF mappings. Fake output cannot substitute for success |
 
 If V4 uses a localhost fixture server, permit only those fixtures through a test-specific transport without weakening the product's public-URL restriction. Call the actual local AI APIs. Record the two V4 requests and assert that neither includes the other URL's information. Do not fix expected category answers to ambiguous model prose. Use structure, input isolation, numerical validity, and preservation as pass conditions, and retain readable samples of generated content.
 
@@ -207,10 +211,64 @@ After implementation, the executor must include a short “Recommended operation
 
 ## Permission Boundaries and Resumption
 
-The current stopping point is P3. Environment inspection is complete; do not install dependencies or create product sources. When implementation is requested, read the full plan, Git status, applicable AGENTS.md instructions, and files needed for the next item, then proceed from I1. Across conversations, reconcile checklist state with actual artifacts and do not repeat completed stages.
+Implementation was explicitly requested on 2026-10-11. I1–I8 and V1–V4 are complete with the evidence below. Across conversations, reconcile checklist state with actual artifacts and do not repeat completed stages without a relevant change.
 
 Later implementation centers on local edits and automated verification. This plan alone does not authorize commits, pushes, publication/deployment, writes to Chrome, file deletion, or model downloads. When needed, check existing user authorization and tool permissions. If authorization is missing, prepare the specific targets, size, and impact before asking.
 
 Documentation alone does not establish real-model compatibility. If V4 lacks a prerequisite, leave it incomplete and identify the verified need for a runtime update, model installation, or API startup. Never silently substitute another model for a specified one.
 
 Preserve data using the original file and immutable import snapshots. Version proposals and apply updates transactionally. Do not destructively overwrite originals or existing proposals. Validate exports in memory or a temporary file and expose only successful results for download. After interruption of import, job creation, or proposal generation, inspect existing hashes, job tokens, and versions before resuming to prevent duplicate creation.
+
+## Execution Evidence (2026-10-11)
+
+I1–I8 are implemented. Design references and deterministic tokens are in docs/design; generated model examples in the concept are not product defaults. User-selectable generation and embedding models retain the plan defaults. The current request supersedes the previous planning-only stop.
+
+Environment: locked Python 3.13.11, FastAPI 0.143.0, HTTPX 0.28.1, Playwright 1.63.0, scikit-learn 1.9.1; Node 26.10.0, npm 12.2.0, Vite 8.3.4, HTMX 2.0.11. Chromium arm64 was installed for the finite scripted check.
+
+V1: ruff, formatting, ty, frontend lint/typecheck and production build passed. Initial ty/TypeScript diagnostics were repaired (DNS tuple typing, CSS module declaration, HTMX verb type). HTMX emits a third-party build-time eval warning; evaluation, injected scripts and indicator styles are disabled at runtime and CSP disallows eval. Manifest/static assets are generated locally. README documents both runtimes, adjustable models, languages and data exclusions; runtime data/model files are ignored. No publication or license selection performed.
+V2: 45 tests passed, covering imports, duplicates, integrity loss/duplication, public-address pinning/redirects, retrieval failure classification, bounded same-URL repair, independent user-selected models, embedding validation, job restart/reuse, all/single/multiple/overlapping scope, incomplete export gate, clustering budget and locale/catalog invariance.
+
+Attempts: V1 ruff/format/lint/build 2 executions each (passing), ty/typecheck 2 each (passing); V2 2 executions (passing). Preparatory formatter/autofix runs preceded V1; cache-denied launches did not execute a verification unit. V3 attempt 1 completed the import/select/pause/resume/edit/export path but failed a viewport-overflow assertion; explicit containment widths were added and detailed DOM width diagnostics retained. V4 attempt 1 reached the actual runtime but failed HTTP 400 because LM Studio requires json_schema rather than the generic json_object request. The documented JSON schema format is now used. Both units remain pending until rerun. V1 frontend build and V2 are invalidated by these focused repairs. V3 attempt 2 identified the exact mobile overflow: absolutely positioned visually-hidden labels inherited full filter widths or offscreen table positions. The hidden-label origin and width are now explicitly bounded. Build has reached 3 executions (all successful but now stale after this CSS repair); one additional build requires user authorization. V3 has one remaining execution. The repair is known; no reasoning-level increase is needed.
+
+Final Python validation: ruff/format/ty attempt 3 passed, V2 attempt 3 passed (45 tests). Frontend lint/typecheck attempt 2 remains valid; only CSS changed subsequently. Current build is stale until the pending additional-build authorization.
+
+User authorized one additional frontend build on 2026-10-11. Build attempt 4 passed with the bounded hidden-label repair. V3 attempt 3 is running.
+
+V3 attempt 3 passed the previously failing desktop/mobile width assertions, import/select/pause/resume/proposal/edit/export and manual-language invariance, but the test incorrectly treated cache revalidation HTTP 304 as a failed static response. The predicate is repaired to accept 200/304; no production source change is needed. One more V3 execution and test-file static validation require an explicit limit extension.
+
+V4 attempt 2 used documented json_schema and the correct Q6_K API ID, but the actual LM Studio inference exceeded its 120-second read deadline. There is one remaining V4 execution; establish a distinct runtime diagnosis before using it. The actual loaded runtime reported llama.cpp arm64 Metal 2.55.0, 16384 context and parallel 4, differing from the earlier explicitly loaded 8192/parallel 1 configuration. Model data is installed and mapped correctly. This is an actual-runtime prerequisite issue, not proof that fake tests validate real compatibility.
+
+User authorized one additional execution of each remaining automated check and requested continuation on 2026-10-11. V1 ruff/format and V3 may therefore run once more. V4 has its original third execution remaining, after runtime preparation.
+
+V3 attempt 4 (explicitly authorized) passed the complete actual-server workflow in both locales at 1440×900 and 390×844, including preservation, pause/resume, edits, downloads, catalog consistency, manual-language persistence, assets, focus and no viewport overflow/JS exceptions. V1 ruff/format attempt 4 also passed; other passing V1 evidence remains current. Model API was stopped after the pause between user turns; the installed model was reloaded through CLI, and API startup must be confirmed before V4.
+
+V4 attempt 3 failed at the 120-second read deadline with LM Studio 0.4.26+4, llama.cpp arm64 Metal 2.55.0, context 8192, parallel 1 and full GPU offload. The task's synthetic-request server log establishes a distinct diagnosis: generation was active at approximately 9.7 tokens/second, but all 1144 generated tokens were reasoning and the answer content remained empty at cancellation. The native model capabilities advertise thinking on by default and support off/on. The user-authorized additional V4 execution (attempt 4) remains available after a grounded reasoning-control repair; no other model or fake output may replace the specified GGUFs.
+
+The focused repair sends OpenAI-compatible `reasoning_effort: "none"` for LM Studio structured analysis only. [llama.cpp's official server documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) defines `none` as disabling thinking; LM Studio's [API issue #988](https://github.com/lmstudio-ai/lmstudio-bug-tracker/issues/988) also records this exact working request shape. Actual compatibility remains to be established by V4, rather than assumed from documentation. Ollama payloads are unchanged; parameterized isolation tests cover both runtimes. This does not change model selection, saved runtime preferences, or per-URL history isolation. V1 ruff/format/ty and V2 evidence are now stale. Their cumulative counts are 4/4/3/3; one additional execution of each is needed for this repair. Frontend and V3 evidence remains current because the UI, assets, worker, and test-only fake inference paths are unchanged.
+
+User explicitly authorized one additional ruff, format, ty and V2 execution for the reasoning-control repair on 2026-10-11. Execute cumulative attempts 5/5/4/4 respectively; the already authorized V4 attempt 4 is in progress.
+
+The authorized repair checks passed: ruff 5, format 5, ty 4 and V2 4 (46 tests). V1/V2 evidence is current again. V3 and frontend evidence remains valid. V4 attempt 4 is still running.
+
+V4 attempt 4 passed with the specified GGUFs, two independent requests, finite normalized 768-dimensional vectors and a three-bookmark export preserving URLs, including the synthetic 404. LM Studio 0.4.26+4/llama.cpp Metal 2.55.0 returned actual Japanese suggestions `FastAPI 公式ドキュメント` and `TypeScript 公式ドキュメント入門`; reasoning tokens were zero under the explicit off override. The user then requested unlimited response waits and selectable runtime/app inference settings, followed by a screenshot specifying Top K/P, Min P, repetition/presence controls. The required verification must cover that new scope; previously passing request/UI evidence is invalidated as appropriate. No overall completion is claimed.
+
+The requested settings source, thinking/temperature/samplers, native Ollama adapter, timeout=0 support, UI catalogs/serialization and job snapshot coverage are implemented. Existing local settings now use timeout 0/output budget 8192; the selected model IDs are unchanged. V4 will run one runtime-default fixture and one app-override fixture with actual models. The automated harness remains finite (550 seconds per API response, 1200 seconds total), independently of the user's unlimited product setting. The cumulative executed counts are ruff 5, format 5, ty 4, lint 2, typecheck 2, build 4, V2 4, V3 4, V4 4. One additional execution of each affected unit is needed after this user-requested scope change, with no repeated run after a pass.
+
+Frontend lint/typecheck attempt 3 passed for the added controls. User explicitly authorized the remaining seven units once each: ruff 6, format 6, ty 5, build 5, V2 5, V3 5 and V4 5. Execute these finite units without expanding the scope or repeating passing checks.
+
+V1 ruff 6, format 6, ty 5 and build 5 passed; frontend lint/typecheck 3 remains current. V2 attempt 5 passed all 52 tests, covering both runtime/app request shapes, explicit disabled samplers, thinking on/off, unlimited/positive response waits, isolation and immutable job snapshots. V3/V4 attempt 5 are running.
+
+V3 attempt 5 passed. The actual UI persists both inference sources, temperature, thinking, nullable sampling toggles, penalty values and timeout 0 after reload. Both English/Japanese settings and workflow have no page overflow at desktop/mobile widths. Import, pause/resume, proposal edits and original/export downloads still pass with no JS errors. The delivered app was restarted from current sources on 127.0.0.1:8765 and returns a healthy response.
+
+V4 attempt 5 passed with LM Studio 0.4.26+4, llama.cpp arm64 Metal 2.55.0 and CLI commit dcefd5a. Generation API ID `qwen3.5-9b-uncensored-hauhaucs-aggressive` maps to `HauhauCS/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive/Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf`; embedding API ID `text-embedding-embeddinggemma-2` maps to `unsloth/embeddinggemma-2-GGUF/embeddinggemma-2-Q8_0.gguf`. Two independent requests covered runtime defaults and app/thinking-off settings. Both yielded finite normalized 768-dimensional embeddings. The proposal/export preserved all three bookmarks and original URLs, including the synthetic 404.
+
+Readable actual-model samples from V4 attempt 5:
+
+| Fixture / settings source | Suggested name | Summary / purpose | Category examples |
+| --- | --- | --- | --- |
+| FastAPI / runtime | ファストAPI | Python ベースのモダンで高速な Web フレームワーク。Python 開発者が HTTP API サービスを効率的に構築・維持するためのリファレンスと機能確認 | Python ライブラリ、Web フレームワーク、API 構築ツール |
+| TypeScript / app, thinking off | TypeScript 公式ドキュメントハンドブック | JavaScript に型付け機能を追加した TypeScript の公式ドキュメント。型、インターフェース、絞り込み、ジェネリック関数を解説し、開発者の体系的な学習に使用 | プログラミング言語、ソフトウェアエンジニアリング、JavaScript エコシステム |
+
+Final user amendment sets `InferenceSettings.source="app"` and `thinking=False`. Existing local settings lack the inference field and therefore inherit these new defaults without changing either model ID or other saved settings. README and design notes now describe the same defaults. The browser harness's initial-state assertion follows the configured source rather than hard-coding runtime; its remaining workflow is unchanged. This reversible default-only edit adds no inference logic, frontend assets or dependencies. Review plus delivery readback establishes the new initial state: `/api/settings` returns app/false and rendered HTML selects app/off with enabled app controls. The already passing request, persistence and real-model evidence covers that exact app/off behavior; no full verification unit was rerun or budget expanded for the default-only edit. `git diff --check` passed. The latest app is running at http://127.0.0.1:8765.
+
+Required verification is complete: ruff 6, format 6, ty 5, frontend lint/typecheck 3, build 5, V2 5 (52 tests), V3 5 and V4 5 passed. Actual-model evidence is for LM Studio with the specified GGUFs; Ollama's native request adapter is covered by the fake-transport unit tests, not an actual Ollama model run. No visual screenshot fidelity verification, user bookmark operation, Chrome write, model download, commit or publication was performed.

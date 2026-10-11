@@ -1,0 +1,15 @@
+<section class="job" data-job="{{ job.id }}" data-state="{{ job.state }}" {% if job.state == "running" %}hx-get="/ui/jobs/{{ job.id }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+<h2>{{ t('progress') }} · {{ t('job_complete' if job.state == 'complete' else job.state) }}</h2>
+<progress max="{{ job.counts.total }}" value="{{ job.counts.total-job.counts.remaining }}" aria-label="{{ t('progress') }}"></progress>
+<dl class="counts">{% for key in ['total','complete','retrieval_failed','analysis_failed','remaining'] %}<div><dt>{{ t(key) }}</dt><dd>{{ job.counts[key] }}</dd></div>{% endfor %}</dl>
+<div class="actions"><button type="button" data-action="pause" {{ 'disabled' if job.state != 'running' }}>{{ t('pause') }}</button><button type="button" data-action="resume" {{ 'disabled' if job.state != 'paused' }}>{{ t('resume') }}</button><button type="button" data-action="retry-failed" {{ 'disabled' if job.state == 'running' }}>{{ t('retry') }}</button></div>
+<div class="table-scroll"><table><thead><tr><th>URL</th><th>{{ t('status') }}</th></tr></thead><tbody>
+{% for item in job["items"][:100] %}
+<tr><td class="url-cell">{{ item.url }}</td><td>{{ t(item.state) }}{% if item.error %} · {{ t(item.error) }}{% elif item.retrieval and item.retrieval.status != 'ok' %} · {{ t(item.retrieval.status) }}{% endif %}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% if job.state == 'complete' %}
+<label class="check-label"><input id="allow-incomplete" type="checkbox">{{ t('allow_incomplete') }}</label>
+<button type="button" class="primary" data-action="proposal">{{ t('proposal') }}</button>
+{% endif %}
+</section>
