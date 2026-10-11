@@ -1,5 +1,6 @@
 import asyncio
 import ipaddress
+import logging
 import socket
 from typing import cast
 from urllib.parse import urlsplit
@@ -9,6 +10,24 @@ import trafilatura
 from bs4 import BeautifulSoup
 
 from bookmark_organization.schemas import AppError, Settings
+
+logger = logging.getLogger(__name__)
+
+
+class RequestPacer:
+    """Space request starts across concurrent pages, redirects and retry batches."""
+
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.next_start = 0.0
+
+    async def wait(self):
+        async with self.lock:
+            loop = asyncio.get_running_loop()
+            delay = self.next_start - loop.time()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self.next_start = loop.time() + 0.5
 
 
 async def public_address(url: str) -> tuple[str, str]:
@@ -35,8 +54,15 @@ async def public_address(url: str) -> tuple[str, str]:
 
 
 class Fetcher:
-    def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.AsyncClient | None = None,
+        *,
+        pacer: RequestPacer | None = None,
+    ):
         self.settings = settings
+        self.pacer = pacer or RequestPacer()
         self.client = client or httpx.AsyncClient(
             trust_env=False,
             follow_redirects=False,
@@ -64,6 +90,7 @@ class Fetcher:
             ip, hostname = await public_address(current)
             original = httpx.URL(current)
             pinned = original.copy_with(host=ip)
+            await self.pacer.wait()
             async with self.client.stream(
                 "GET",
                 pinned,
@@ -71,7 +98,7 @@ class Fetcher:
                     "Host": original.netloc.decode(),
                     "User-Agent": "BookmarkOrganization/0.1",
                 },
-                extensions={"sni_hostname": hostname.encode()},
+                extensions={"sni_hostname": hostname},
             ) as response:
                 if response.status_code in {301, 302, 303, 307, 308}:
                     location = response.headers.get("location")
@@ -171,4 +198,5 @@ class Fetcher:
         except httpx.HTTPError:
             return {"status": "connection_failed"}
         except Exception:
+            logger.exception("Unexpected page retrieval failure")
             return {"status": "extraction_failed"}

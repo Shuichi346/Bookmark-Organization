@@ -154,6 +154,13 @@ async def verify():
                             assert await page.evaluate(
                                 "document.documentElement.scrollWidth <= innerWidth"
                             )
+                            for label in await page.locator(
+                                "#inference-controls .check-label"
+                            ).all():
+                                checkbox = await label.locator("input").bounding_box()
+                                bounds = await label.bounding_box()
+                                assert checkbox and abs(checkbox["width"] - 16) < 1
+                                assert bounds and bounds["height"] < 60
                         await page.set_viewport_size({"width": 1440, "height": 900})
                         await page.locator("#inference-source").select_option("runtime")
                         async with page.expect_response(

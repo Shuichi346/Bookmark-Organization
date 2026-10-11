@@ -1,10 +1,11 @@
 import asyncio
 import json
 import sqlite3
+from functools import partial
 
 from bookmark_organization.bookmarks import uid
 from bookmark_organization.db import Store
-from bookmark_organization.fetching import Fetcher
+from bookmark_organization.fetching import Fetcher, RequestPacer
 from bookmark_organization.llm import PROMPT_VERSION, LocalAI
 from bookmark_organization.organizing import scope
 from bookmark_organization.schemas import AppError, JobRequest, Settings
@@ -81,9 +82,10 @@ def control(store: Store, job: str, action: str):
 
 
 class Worker:
-    def __init__(self, store: Store, fetch_factory=Fetcher, ai_factory=LocalAI):
+    def __init__(self, store: Store, fetch_factory=None, ai_factory=LocalAI):
         self.store = store
-        self.fetch_factory = fetch_factory
+        # Keep pacing state when a manual retry or a new job creates another client.
+        self.fetch_factory = fetch_factory or partial(Fetcher, pacer=RequestPacer())
         self.ai_factory = ai_factory
         self.stopping = False
         self.wake = asyncio.Event()

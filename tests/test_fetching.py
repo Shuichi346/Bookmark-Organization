@@ -1,3 +1,4 @@
+import asyncio
 import socket
 
 import httpx
@@ -45,7 +46,7 @@ async def test_retrieval_states_and_pinned_connection(public_dns, status, expect
     assert result["status"] == expected
     assert requests[0].url.host == "93.184.215.14"
     assert requests[0].headers["host"] == "example.com"
-    assert requests[0].extensions["sni_hostname"] == b"example.com"
+    assert requests[0].extensions["sni_hostname"] == "example.com"
     await fetcher.close()
 
 
@@ -114,3 +115,105 @@ async def test_timeout_empty_content_limit_and_rendering_fallback(
     )
     assert (await f.fetch("https://example.com"))["status"] == "extraction_failed"
     await f.close()
+
+
+async def test_https_sni_through_real_async_transport(public_dns, monkeypatch):
+    from anyio._core._sockets import idna2008_resolve
+    from httpcore._backends.anyio import AnyIOBackend
+    from httpcore._backends.base import AsyncNetworkStream
+
+    html = (
+        "<html><title>Documentation</title><article><p>"
+        + "Useful developer documentation. " * 20
+        + "</p></article></html>"
+    ).encode()
+    handshakes = []
+    requests = []
+    connections = []
+
+    class Socket(AsyncNetworkStream):
+        def __init__(self):
+            self.reply = (
+                b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n"
+                + f"Content-Length: {len(html)}\r\n\r\n".encode()
+                + html
+            )
+
+        async def start_tls(self, ssl_context, server_hostname=None, timeout=None):
+            # Exercise the installed AnyIO hostname validation that rejected bytes.
+            handshakes.append(idna2008_resolve(server_hostname))
+            return self
+
+        async def read(self, max_bytes, timeout=None):
+            reply, self.reply = self.reply, b""
+            return reply
+
+        async def write(self, buffer, timeout=None):
+            requests.append(buffer)
+
+        async def aclose(self):
+            pass
+
+    async def connect_tcp(self, host, port, **kwargs):
+        connections.append((host, port))
+        return Socket()
+
+    monkeypatch.setattr(AnyIOBackend, "connect_tcp", connect_tcp)
+    fetcher = Fetcher(Settings())
+    try:
+        result = await fetcher.fetch("https://example.com/page")
+        assert result["status"] == "ok"
+        assert handshakes == [b"example.com"]
+        assert connections == [("93.184.215.14", 443)]
+        assert b"Host: example.com\r\n" in b"".join(requests)
+    finally:
+        await fetcher.close()
+
+
+async def test_concurrent_requests_and_redirects_are_spaced(public_dns):
+    starts = []
+
+    def handle(request):
+        starts.append(asyncio.get_running_loop().time())
+        if request.url.path == "/redirect":
+            return httpx.Response(302, headers={"location": "/target"})
+        return httpx.Response(200, text="body", headers={"content-type": "text/html"})
+
+    fetcher = Fetcher(
+        Settings(), httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    )
+    try:
+        results = await asyncio.gather(
+            fetcher.response("https://example.com/redirect"),
+            fetcher.response("https://another.example/page"),
+        )
+        assert all(result[0] == 200 for result in results)
+        assert len(starts) == 3
+        assert all(b - a >= 0.5 for a, b in zip(starts, starts[1:]))
+    finally:
+        await fetcher.close()
+
+
+async def test_failed_requests_and_new_clients_share_pacing(public_dns, tmp_path):
+    from bookmark_organization.db import Store
+    from bookmark_organization.jobs import Worker
+
+    starts = []
+    worker = Worker(Store(tmp_path))
+
+    def handle(request):
+        starts.append(asyncio.get_running_loop().time())
+        raise httpx.ConnectError("unreachable")
+
+    for _ in range(2):
+        fetcher = worker.fetch_factory(Settings())
+        await fetcher.client.aclose()
+        fetcher.client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+        try:
+            assert (await fetcher.fetch("https://example.com"))["status"] == (
+                "connection_failed"
+            )
+        finally:
+            await fetcher.close()
+    assert len(starts) == 2
+    assert starts[1] - starts[0] >= 0.5

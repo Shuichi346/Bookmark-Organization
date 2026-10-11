@@ -1,10 +1,40 @@
+<table>
+  <thead>
+    <tr>
+      <th style="text-align:center"><a href="README_ja.md">日本語</a></th>
+      <th style="text-align:center"><a href="README.md">English</a></th>
+    </tr>
+  </thead>
+</table>
+
 # Bookmark Organization
 
-A local web application that reads Chrome bookmark HTML, analyzes individual pages with local models, proposes descriptive Japanese names and semantic folders, and exports Chrome-compatible HTML. Original bytes and immutable tree snapshots are retained in SQLite. Duplicate URLs stay separate bookmarks; inaccessible pages are retained in clearly named folders. Exports are blocked if IDs, counts, URL multiplicities or unselected content change unexpectedly.
+A local web application that organizes Chrome bookmarks with AI models running on your computer. Import an exported bookmark file, choose the folders to process, review suggested Japanese names and semantic groupings, and download Chrome-compatible HTML.
 
-## Setup
+The application preserves the original imported file and keeps duplicate URLs as separate bookmarks. Failed page retrieval never deletes a bookmark. Before export, it checks bookmark identities, counts, URL multiplicities, and unchanged content outside your selection.
 
-Use Python 3.13, uv, Node.js >=26.5 and npm >=12.0.1. The inference runtime runs separately on the same computer. Apple silicon execution uses LM Studio or Ollama; there are no CUDA dependencies.
+## What you can do
+
+- Organize all bookmarks, one folder, or several folders together.
+- Analyze pages independently and group related bookmarks using embeddings.
+- Compare original and proposed names and locations, search or filter results, and save edits as new proposal versions.
+- Pause, resume, and manually retry failed items, with progress saved across server restarts.
+- Choose generation and embedding models independently through LM Studio or Ollama.
+- Switch between English and Japanese interfaces. Generated names remain Japanese.
+
+Inference stays local. Retrieving bookmark content still accesses the bookmarked websites. The application does not edit Chrome profiles directly or download models automatically.
+
+## Requirements
+
+- Python **3.13** and **uv**.
+- Node.js **26.5 or later** and npm **12.0.1 or later** for building frontend assets.
+- A local **LM Studio** or **Ollama** API server with a generation model and an embedding model installed.
+
+The project was developed and verified on Apple silicon macOS. The inference runtime handles model execution; the application has no CUDA dependencies. Normal operation uses one Python server plus the inference runtime.
+
+## Get started
+
+From the repository directory:
 
 ```sh
 uv sync --locked
@@ -13,66 +43,97 @@ npm run build
 uv run --locked bookmark-organization
 ```
 
-Open http://127.0.0.1:8765. The server binds only to loopback. Stop with Ctrl+C. One server process manages the database and single worker; do not run multiple workers against the same data directory.
+Open [http://127.0.0.1:8765](http://127.0.0.1:8765). Stop the server with **Ctrl+C**. It listens only on loopback and manages one background worker; run only one server process per data directory.
 
-Optional JavaScript-rendered page retrieval requires Chromium:
+Frontend assets are served locally without a CDN. Rebuild with `npm run build` after changing frontend sources.
+
+### Connect your models
+
+Start the local API server in your inference runtime, then open **Settings** in the application.
+
+| Runtime | Typical base URL |
+| --- | --- |
+| LM Studio | `http://localhost:1234/v1` |
+| Ollama | `http://localhost:11434/v1` |
+
+For content analysis and embeddings separately, choose the runtime and endpoint, click **Discover models / test connection**, select an installed model, and **Save**. Use the model ID returned by discovery, which may differ from its filename. Model installation and loading are handled in the runtime.
+
+The initial selections are:
+
+| Role | Default API model ID | GGUF used in the recorded LM Studio verification |
+| --- | --- | --- |
+| Content analysis | `qwen3.5-9b-uncensored-hauhaucs-aggressive` | `Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf` from HauhauCS |
+| Embeddings | `text-embedding-embeddinggemma-2` | `embeddinggemma-2-Q8_0.gguf` from unsloth |
+
+You can select other models that support the required structured analysis or embedding role. Ollama names may differ from these defaults. Model endpoints must be loopback, cloud-backed entries are excluded, and there is no cloud AI fallback. See the [LM Studio API documentation](https://lmstudio.ai/docs/developer/openai-compat) and [Ollama compatibility documentation](https://docs.ollama.com/api/openai-compatibility).
+
+Inference defaults to **Use web app settings**, with **thinking off**. This mode lets you control thinking, temperature, and sampling; unchecked sampling controls send neutral disabling values. **Use runtime settings** leaves thinking, temperature, and sampling overrides to the runtime's API defaults. Neither mode changes saved runtime preferences. New jobs snapshot application settings; existing jobs retain their selections, while runtime-owned defaults can change separately.
+
+**Model response wait** defaults to **0 = unlimited**. Set a positive number of seconds to limit waiting. Pause waits for an in-flight request to return; if an unlimited request stalls, stop and restart the server, then resume the paused job. Advanced settings also expose retrieval limits, context and output budgets, and the clustering threshold.
+
+### Use the application
+
+1. Export your Chrome bookmarks as UTF-8 HTML and import the file.
+2. Select all bookmarks, one folder, or several folders. Descendants are included, and overlapping selections are deduplicated. Multiple folders form one processing region; choose a selected folder that is not inside another selected folder as the destination. All-bookmark mode creates a root folder named `整理済み`.
+3. Start analysis and monitor progress. Closing the browser tab does not stop processing. **Pause** stops the next stage from starting, and **Resume** continues from saved progress. Interrupted jobs remain paused after a server restart until you resume them.
+4. Review retrieval and analysis failures. Use **Retry failed** after fixing the cause. Retrieval failures retain original names in folders such as `404` or `アクセス制限`. Including analysis failures requires explicitly allowing `要確認` (Needs review).
+5. Create a proposal, compare names and locations, edit names or allowed destination folders, and save. Each save creates a new version while the original import remains unchanged.
+6. Export after integrity validation passes. You can also download the original imported file. Review exports in a separate Chrome profile: Chrome imports add bookmarks to the existing collection.
+
+Start with a small file and check the suggestions before importing the result into Chrome. Category quality depends on page content and the selected model; isolated outliers are placed in `要確認`. Selections exceeding the estimated 128 MiB clustering distance-memory budget must be processed in smaller folder groups.
+
+### Optional page rendering
+
+For JavaScript-rendered pages, install Chromium and enable rendering in **Settings**:
 
 ```sh
 uv run --locked playwright install chromium
 ```
 
-Generated frontend assets are local and ignored by Git. Rebuild after changing frontend sources. No CDN is needed during operation. Configure portable `BOOKMARK_DATA_DIR` (default `data/`) and `BOOKMARK_PORT` (default `8765`) environment variables if needed. Runtime databases, settings and original files belong in the ignored data directory. Back up that directory to preserve work.
+Retrieval blocks private and reserved network destinations and validates redirects. Request starts are spaced at least 0.5 seconds apart across the worker, including rendered subresources and manual retries. Failed retrieval is not automatically retried, and `robots.txt` is not checked. Rendering uses the same restrictions and cannot bypass logins or CAPTCHA. Unsupported URL schemes remain in the bookmark collection without retrieval.
 
-## Local models
+## Storage and language
 
-Start the LM Studio local API server (default http://localhost:1234/v1), or Ollama (http://localhost:11434/v1). In **Settings**, independently choose a runtime, endpoint and model for content analysis and embeddings. **Discover models / test connection** lists installed local models; select one and **Save**. No model is hard-coded as the only permissible choice. The defaults are:
+The default `data/` directory stores the SQLite database, original imports, processing results, proposal versions, and `settings.json`. Stop the server before backing up the directory. It is ignored by Git; exclude any custom data directory as well, and keep private content, credentials, and model binaries out of tracked files.
 
-- Content: `qwen3.5-9b-uncensored-hauhaucs-aggressive`, mapped initially to HauhauCS's `Qwen3.5-9B-Uncensored-HauhauCS-Aggressive-Q6_K.gguf`.
-- Embeddings: `text-embedding-embeddinggemma-2`, mapped initially to unsloth's `embeddinggemma-2-Q8_0.gguf`.
+| Environment variable | Default |
+| --- | --- |
+| `BOOKMARK_DATA_DIR` | `data/` |
+| `BOOKMARK_PORT` | `8765` |
 
-Use the API identifier actually returned by your runtime, not a filename. Changing settings affects new jobs; existing jobs retain their endpoint/model/limit snapshot. Ollama names may differ. Import GGUFs into Ollama separately and discover the resulting local IDs. Cloud-backed Ollama entries are excluded; model endpoints must be loopback. There is no cloud AI fallback and no automatic model download.
+For example:
 
-[LM Studio compatibility](https://lmstudio.ai/docs/developer/openai-compat) and [Ollama compatibility](https://docs.ollama.com/api/openai-compatibility) document the local API endpoints. Arbitrary selected models must support their selected role; structured-output errors and invalid vectors remain visible and retryable. Embedding inputs use `task: clustering | query: ` as documented by the [default model card](https://huggingface.co/unsloth/embeddinggemma-2-GGUF).
+```sh
+BOOKMARK_DATA_DIR=./my-bookmark-data BOOKMARK_PORT=8766 uv run --locked bookmark-organization
+```
 
-**Inference settings** defaults to **Use web app settings**, with **thinking off**. Select **Use runtime settings** to use the model defaults applied by that runtime's API, omitting temperature, thinking and sampling overrides. Settings confined to a separate LM Studio chat may not apply to API requests; configure the model's API inference defaults in the runtime. App mode sends the chosen thinking switch, temperature, Top K, Top P, Min P, repetition penalty and presence penalty. Unchecking a sampling control explicitly disables it with a neutral value instead of inheriting the runtime's enabled filter. These per-request settings do not change saved runtime preferences. Model/runtime support for thinking can vary; unsupported settings remain visible errors.
+Interface language defaults to **Automatic**: the highest-priority usable browser preference selects Japanese for `ja` tags and English for other languages. Missing or unusable preferences fall back to Japanese. Manual **English / 日本語** choices persist in a browser cookie. Switching languages preserves scope selection and saved work, and does not translate original data or previously generated names.
 
-LM Studio uses its OpenAI-compatible chat endpoint (thinking off maps to `reasoning_effort: "none"`, on to `"high"`). Ollama uses native `/api/chat` with `think` and `options` so all listed samplers are supported; embeddings keep the OpenAI-compatible endpoint. Each chat call still contains only that URL's two fresh messages, no tools and no history. New jobs snapshot the app's selected settings; runtime-owned defaults can change outside the app and are not snapshotted.
+## Development
 
-**Model response wait** defaults to **0 = unlimited**. Set a positive number of seconds to limit response waiting. API connection/pool limits remain 10 seconds and write limits 30 seconds; bookmark retrieval has separate limits. Pause prevents starting another stage but waits for an in-flight model request to return; stop the server to interrupt an indefinitely stalled request, then resume its paused job after restart. The output budget defaults to 8192 tokens and includes thinking; increase it in Advanced settings for models that think extensively. A truncated answer is an analysis failure, not a complete result.
+The application uses FastAPI, Jinja2, HTMX, TypeScript, and SQLite. Python code is in [`src/bookmark_organization/`](src/bookmark_organization/), frontend sources in [`frontend/`](frontend/), and checks in [`tests/`](tests/). Generated assets in `src/bookmark_organization/static/` are ignored by Git.
 
-## Workflow
-
-1. Export Chrome bookmarks as UTF-8 HTML and import the file.
-2. Select all bookmarks, one folder, or several folders. Descendants are included and overlapping selections are deduplicated. Multiple folders form one region; choose one normalized selected folder as destination. All-bookmark mode creates a separate root folder named 整理済み.
-3. Analyze the selected scope. Every page gets fresh independent messages. Pause prevents the next stage from starting; an in-flight bounded request may finish. Closing the tab does not stop the worker. After server restart, interrupted jobs are paused until **Resume**.
-4. Review progress and retrieval/analysis failures. Retry failures when their cause is resolved. Failed retrieval never deletes a bookmark. Failed analysis can enter a proposal only after explicitly allowing **要確認 (Needs review)**.
-5. Create a proposal, search/filter/page through comparisons, edit names or allowed destination folders and save. Each save creates a version; originals remain immutable.
-6. Export HTML after the preservation gate passes. Keep the original download. Chrome imports add bookmarks: use a separate Chrome profile when reviewing an export.
-
-The HTTP fetcher holds private/reserved destinations, pins connections to validated public IPs and checks redirects. Optional rendering runs in isolated contexts and routes subresources through the same restrictions. It cannot bypass logins or CAPTCHA. Unsupported schemes are preserved without retrieval.
-
-Advanced settings expose retrieval limits, context/output budgets and cosine clustering threshold. Large selections exceeding the estimated 128 MiB distance budget are rejected with a folder-processing recommendation. Names and cluster suggestions depend on page content and the chosen model; isolated outliers remain in 要確認.
-
-## Interface language
-
-The initial mode is **Automatic**. The highest-priority usable browser language selects Japanese for `ja` tags and English for other languages; unavailable preferences fall back to Japanese. Manual **English / 日本語** choices persist in a browser cookie. Language changes preserve scope selection and saved processing, and do not translate original bookmark data or previously generated names.
-
-Catalogs are `src/bookmark_organization/locales/en.json` and `ja.json`. Keep keys and interpolation parameters in sync; errors have stable API codes and localized presentation. Add locales by extending these catalogs and the supported-locale list.
-
-## Verification
+Run the relevant checks from the repository directory:
 
 ```sh
 uv run --locked ruff check src tests
 uv run --locked ruff format --check src tests
 uv run --locked ty check src
+uv run --locked pytest -q
 npm run lint
 npm run typecheck
 npm run build
-uv run --locked pytest -q tests/test_bookmarks.py tests/test_fetching.py tests/test_llm.py tests/test_jobs.py tests/test_organizing.py tests/test_i18n.py
 uv run --locked python tests/smoke_app.py
+```
+
+Unit tests use synthetic HTML, temporary databases, and fake transports. The browser smoke test requires built assets and Playwright Chromium; it runs a real application server with fake inference and checks the workflow in both languages at desktop and mobile widths.
+
+The separate actual-model acceptance test is:
+
+```sh
 uv run --locked python tests/smoke_local_models.py --settings data/settings.json
 ```
 
-Focused tests use synthetic HTML, temporary databases and fake transports. The finite browser smoke starts a real server with test-only fake inference and checks the actual workflow, both locales, desktop/mobile layout and focusable controls. Real-model verification calls actual local models and never replaces them with fake output. Its settings file must identify the two plan-default models for that specific acceptance check.
+It specifically requires LM Studio, its `lms` CLI, and the two GGUF models listed above with matching IDs in the settings file. Recorded real-model evidence covers LM Studio; Ollama's adapter is covered by fake-transport unit tests. Synthetic checks do not prove actual-model compatibility.
 
-See PLANS.md for acceptance status and docs/design/README.md for screen specification. No actual private bookmarks, fetched user content, credentials or model binaries should be committed. Publication and license selection are separate user decisions.
+See the [interface specification](docs/design/README.md) and [implementation plan and verification history](PLANS.md) for design details and recorded evidence.

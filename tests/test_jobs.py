@@ -12,6 +12,10 @@ async def test_pause_restart_resume_reuses_completed_stages(tmp_path):
     FakeFetcher.calls.clear()
     FakeAI.calls.clear()
     store = Store(tmp_path)
+    initial = store.settings()
+    initial.inference.source = "runtime"
+    initial.inference.thinking = True
+    store.save_settings(initial)
     project = store.import_html(HTML, "test.html")
     req = JobRequest(all=True, token="token-123")
     job = create_job(store, project, req)
