@@ -61,11 +61,32 @@ def job_state(store: Store, job: str) -> dict:
 
 
 def control(store: Store, job: str, action: str):
-    store.one("SELECT id FROM jobs WHERE id=?", (job,))
     with store.connect() as db:
+        row = db.execute("SELECT state FROM jobs WHERE id=?", (job,)).fetchone()
+        if row is None:
+            raise AppError("not_found", 404)
+        state = row["state"]
+        if action == "cancel" and state == "cancelled":
+            return
+        allowed = {
+            "pause": {"running", "paused"},
+            "resume": {"paused", "running"},
+            "retry-failed": {"paused", "complete"},
+            "cancel": {"running", "paused"},
+        }
+        if state not in allowed.get(action, set()):
+            raise AppError("invalid_job_action", 409)
         if action == "pause":
             db.execute(
                 "UPDATE jobs SET state='paused' WHERE id=? AND state='running'", (job,)
+            )
+        elif action == "cancel":
+            db.execute("UPDATE jobs SET state='cancelled' WHERE id=?", (job,))
+            # Retain saved results and failures; only unfinished items are cancelled.
+            db.execute(
+                "UPDATE job_items SET state='cancelled' WHERE job=? "
+                "AND state NOT IN ('complete','retrieval_failed','analysis_failed')",
+                (job,),
             )
         else:
             if action == "retry-failed":
@@ -82,13 +103,23 @@ def control(store: Store, job: str, action: str):
 
 
 class Worker:
-    def __init__(self, store: Store, fetch_factory=None, ai_factory=LocalAI):
+    def __init__(self, store: Store, fetch_factory=None, ai_factory=None):
         self.store = store
         # Keep pacing state when a manual retry or a new job creates another client.
         self.fetch_factory = fetch_factory or partial(Fetcher, pacer=RequestPacer())
-        self.ai_factory = ai_factory
+        self.ai_factory = ai_factory or (
+            lambda settings: LocalAI(settings, api_key=store.openrouter_api_key())
+        )
         self.stopping = False
         self.wake = asyncio.Event()
+        self.active_job: str | None = None
+        self.active_task: asyncio.Task | None = None
+
+    def cancel(self, job: str):
+        # Cancel the batch task, not the worker loop, so later jobs can still run.
+        if self.active_job == job and self.active_task and not self.active_task.done():
+            if not self.active_task.cancelling():
+                self.active_task.cancel()
 
     def recover(self):
         with self.store.connect() as db:
@@ -107,15 +138,17 @@ class Worker:
 
     async def process(self, job: dict):
         identifier = job["id"]
+        if not self.running(identifier):
+            return
         snapshot = json.loads(job["snapshot"])
         settings = Settings.model_validate(snapshot["settings"])
         fetcher = self.fetch_factory(settings)
         ai = self.ai_factory(settings)
         tree = {n["id"]: n for n in self.store.tree(job["project"])}
         try:
-            # Validate actual local model availability once for this processing batch.
-            await ai.ensure_local(settings.generation)
-            await ai.ensure_local(settings.embedding)
+            # Validate each selected provider/model once for this processing batch.
+            await ai.ensure_available(settings.generation)
+            await ai.ensure_available(settings.embedding, role="embedding")
             pending = [
                 i for i in self.store.items(identifier) if i["state"] not in TERMINAL
             ]
@@ -181,8 +214,10 @@ class Worker:
             with self.store.connect() as db:
                 db.execute("UPDATE jobs SET state='complete' WHERE id=?", (identifier,))
         finally:
-            await fetcher.close()
-            await ai.close()
+            try:
+                await fetcher.close()
+            finally:
+                await ai.close()
 
     async def run(self):
         while not self.stopping:
@@ -190,9 +225,27 @@ class Worker:
                 "SELECT * FROM jobs WHERE state='running' ORDER BY created LIMIT 1"
             )
             if rows:
+                self.active_job = rows[0]["id"]
+                self.active_task = asyncio.create_task(self.process(rows[0]))
                 try:
-                    await self.process(rows[0])
+                    await self.active_task
+                except asyncio.CancelledError:
+                    if (
+                        self.stopping
+                        or self.store.one(
+                            "SELECT state FROM jobs WHERE id=?", (self.active_job,)
+                        )["state"]
+                        != "cancelled"
+                    ):
+                        raise
                 except Exception:
+                    if (
+                        self.store.one(
+                            "SELECT state FROM jobs WHERE id=?", (self.active_job,)
+                        )["state"]
+                        == "cancelled"
+                    ):
+                        continue
                     with self.store.connect() as db:
                         db.execute(
                             "UPDATE jobs SET state='paused' WHERE id=?",
@@ -206,6 +259,9 @@ class Worker:
                                 "pending",
                                 error="worker_error",
                             )
+                finally:
+                    self.active_job = None
+                    self.active_task = None
             else:
                 self.wake.clear()
                 try:

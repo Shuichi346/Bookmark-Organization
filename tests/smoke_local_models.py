@@ -60,8 +60,8 @@ async def verify(settings_path: Path):
     client.event_hooks["request"] = [record]
     ai = LocalAI(settings, client)
     try:
-        await ai.ensure_local(settings.generation)
-        await ai.ensure_local(settings.embedding)
+        await ai.ensure_available(settings.generation)
+        await ai.ensure_available(settings.embedding, role="embedding")
         nodes = parse(
             b'<DL><H3>Sample</H3><DL><A HREF="https://fastapi.tiangolo.com/">FastAPI</A>'
             b'<A HREF="https://www.typescriptlang.org/docs/">TypeScript</A>'

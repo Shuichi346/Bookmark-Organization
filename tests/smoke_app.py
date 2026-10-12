@@ -66,8 +66,17 @@ async def verify():
                         )
                         page = await context.new_page()
                         errors = []
+                        console_messages = []
                         failed_assets = []
                         page.on("pageerror", lambda error: errors.append(str(error)))
+                        page.on(
+                            "console",
+                            lambda message: (
+                                console_messages.append((message.type, message.text))
+                                if message.type in {"error", "warning"}
+                                else None
+                            ),
+                        )
                         page.on(
                             "response",
                             lambda response: (
@@ -78,6 +87,10 @@ async def verify():
                             ),
                         )
                         await page.goto(base)
+                        assert page.url == base + "/"
+                        assert await page.title() == "Bookmark Organization"
+                        await expect(page.locator("h1").last).to_be_visible()
+                        assert await page.locator("vite-error-overlay").count() == 0
                         await expect(page.locator("html")).to_have_attribute(
                             "lang", lang
                         )
@@ -147,6 +160,86 @@ async def verify():
                         await expect(
                             page.locator('input[name="enable.top_p"]')
                         ).not_to_be_checked()
+
+                        # Verify the cloud settings flow without a paid API call.
+                        async def model_catalog(route):
+                            payload = route.request.post_data_json
+                            assert payload["generation"]["runtime"] == "openrouter"
+                            assert payload["embedding"]["runtime"] == "lmstudio"
+                            assert payload["openrouter_api_key"] == "synthetic-ui-key"
+                            assert payload["generation"]["model"] == "test/direct-chat"
+                            assert (
+                                payload["embedding"]["model"] == "test/direct-embedding"
+                            )
+                            await route.fulfill(
+                                json={
+                                    "generation": ["test/chat"],
+                                    "embedding": [initial["embedding"]["model"]],
+                                }
+                            )
+
+                        await page.route("**/api/settings/probe", model_catalog)
+                        await page.locator(
+                            'select[name="generation.runtime"]'
+                        ).select_option("openrouter")
+                        await expect(
+                            page.locator("#openrouter-settings")
+                        ).to_be_visible()
+                        await expect(
+                            page.locator('input[name="generation.base_url"]')
+                        ).to_have_value("https://openrouter.ai/api/v1")
+                        await expect(
+                            page.locator('input[name="generation.base_url"]')
+                        ).to_have_attribute("readonly", "")
+                        await page.locator("#openrouter-api-key").fill(
+                            "synthetic-ui-key"
+                        )
+                        await page.locator('input[name="generation.model"]').fill(
+                            "test/direct-chat"
+                        )
+                        await page.locator('input[name="embedding.model"]').fill(
+                            "test/direct-embedding"
+                        )
+                        await page.locator("#probe").click()
+                        await expect(
+                            page.locator('input[name="embedding.model"]')
+                        ).to_have_value("test/direct-embedding")
+                        await expect(
+                            page.locator("#generation-models option").last
+                        ).to_have_attribute("value", "test/chat")
+                        await expect(
+                            page.locator('input[name="generation.model"]')
+                        ).to_have_value("test/direct-chat")
+                        async with page.expect_response(
+                            lambda r: (
+                                r.url.endswith("/api/settings")
+                                and r.request.method == "PUT"
+                            )
+                        ) as saved:
+                            await page.locator("#settings-form button.primary").click()
+                        assert (await saved.value).status == 200
+                        await expect(page.locator("#openrouter-api-key")).to_have_value(
+                            ""
+                        )
+                        await page.reload()
+                        await page.locator("#settings-toggle").click()
+                        await expect(
+                            page.locator('select[name="generation.runtime"]')
+                        ).to_have_value("openrouter")
+                        await expect(
+                            page.locator('select[name="embedding.runtime"]')
+                        ).to_have_value("lmstudio")
+                        await expect(
+                            page.locator('input[name="generation.model"]')
+                        ).to_have_value("test/direct-chat")
+                        await expect(
+                            page.locator('input[name="embedding.model"]')
+                        ).to_have_value("test/direct-embedding")
+                        assert "synthetic-ui-key" not in await page.content()
+                        response = await context.request.get(base + "/api/settings")
+                        assert "synthetic-ui-key" not in await response.text()
+                        assert await page.title() == "Bookmark Organization"
+                        assert page.url == base + "/"
                         for width in [1440, 390]:
                             await page.set_viewport_size(
                                 {"width": width, "height": 900}
@@ -161,7 +254,30 @@ async def verify():
                                 bounds = await label.bounding_box()
                                 assert checkbox and abs(checkbox["width"] - 16) < 1
                                 assert bounds and bounds["height"] < 60
+                            qa_directory = os.environ.get("BOOKMARK_QA_DIR")
+                            if qa_directory:
+                                image = (
+                                    Path(qa_directory)
+                                    / f"openrouter-{lang}-{width}.png"
+                                )
+                                image.parent.mkdir(parents=True, exist_ok=True)
+                                await page.locator("#settings-panel").screenshot(
+                                    path=str(image)
+                                )
                         await page.set_viewport_size({"width": 1440, "height": 900})
+                        await page.unroute("**/api/settings/probe", model_catalog)
+                        await page.locator(
+                            'select[name="generation.runtime"]'
+                        ).select_option("lmstudio")
+                        await page.locator('input[name="generation.model"]').fill(
+                            initial["generation"]["model"]
+                        )
+                        await page.locator('input[name="embedding.model"]').fill(
+                            initial["embedding"]["model"]
+                        )
+                        await expect(
+                            page.locator("#openrouter-settings")
+                        ).to_be_hidden()
                         await page.locator("#inference-source").select_option("runtime")
                         async with page.expect_response(
                             lambda r: (
@@ -202,6 +318,70 @@ async def verify():
                                 f'.folder-check[value="{identifier}"]'
                             ).check()
                         assert await page.locator("#destination option").count() == 2
+                        # Cancel running and paused jobs at both responsive widths.
+                        for width, height in [(1440, 900), (390, 844)]:
+                            await page.set_viewport_size(
+                                {"width": width, "height": height}
+                            )
+                            for paused in [False, True]:
+                                await page.locator("#scope-form button").click()
+                                await page.wait_for_url("**&job=*")
+                                cancelled_job = await page.locator(
+                                    ".job"
+                                ).get_attribute("data-job")
+                                if paused:
+                                    await page.locator(
+                                        '[data-action="pause"]:enabled'
+                                    ).click()
+                                    await expect(
+                                        page.locator(".job")
+                                    ).to_have_attribute("data-state", "paused")
+                                await page.locator(
+                                    '[data-action="cancel"]:enabled'
+                                ).click()
+                                await expect(page.locator(".job")).to_have_attribute(
+                                    "data-state", "cancelled"
+                                )
+                                await expect(page.locator(".job h2")).to_contain_text(
+                                    "Cancelled" if lang == "en" else "キャンセル済み"
+                                )
+                                for action in [
+                                    "pause",
+                                    "resume",
+                                    "retry-failed",
+                                    "cancel",
+                                ]:
+                                    await expect(
+                                        page.locator(f'[data-action="{action}"]')
+                                    ).to_be_disabled()
+                                await expect(
+                                    page.locator('[data-action="proposal"]')
+                                ).to_have_count(0)
+                                assert await page.evaluate(
+                                    "document.documentElement.scrollWidth <= innerWidth"
+                                )
+                                if paused and os.environ.get("BOOKMARK_QA_SCREENSHOTS"):
+                                    screenshot = (
+                                        Path(os.environ["BOOKMARK_QA_SCREENSHOTS"])
+                                        / f"cancelled-{lang}-{width}.png"
+                                    )
+                                    screenshot.parent.mkdir(parents=True, exist_ok=True)
+                                    await page.locator(
+                                        ".job"
+                                    ).scroll_into_view_if_needed()
+                                    await page.screenshot(path=str(screenshot))
+                                await page.reload()
+                                await expect(page.locator(".job")).to_have_attribute(
+                                    "data-state", "cancelled"
+                                )
+                                assert (
+                                    await (
+                                        await context.request.get(
+                                            base + "/api/jobs/" + cancelled_job
+                                        )
+                                    ).json()
+                                )["state"] == "cancelled"
+                        await page.set_viewport_size({"width": 1440, "height": 900})
                         await page.locator("#scope-form button").click()
                         await page.wait_for_url("**&job=*")
                         await page.locator('[data-action="pause"]:enabled').click()
@@ -323,6 +503,15 @@ async def verify():
                         await expect(page.locator("#alert")).to_be_visible()
                         assert (await page.locator("#alert").text_content()).strip()
                         assert errors == [], errors
+                        unexpected_console = [
+                            text
+                            for _, text in console_messages
+                            if not any(
+                                f"status of {status}" in text
+                                for status in [400, 404, 422]
+                            )
+                        ]
+                        assert unexpected_console == [], unexpected_console
                         assert failed_assets == [], failed_assets
                         await context.close()
                     await browser.close()
@@ -345,7 +534,7 @@ async def verify():
                 process.wait(timeout=5)
             log.close()
     print(
-        "V3 passed: real-server workflow, pause/resume, edits/export, locale persistence, layouts, focus and isolation."
+        "V3 passed: real-server workflow, cancel/restart, pause/resume, edits/export, locale persistence, layouts, focus and isolation."
     )
 
 

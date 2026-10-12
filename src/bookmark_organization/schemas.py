@@ -1,7 +1,9 @@
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, SecretStr, ValidationInfo, field_validator
+
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 class AppError(Exception):
@@ -11,13 +13,24 @@ class AppError(Exception):
 
 
 class Endpoint(BaseModel):
-    runtime: Literal["lmstudio", "ollama"] = "lmstudio"
-    base_url: str = "http://localhost:1234/v1"
+    runtime: Literal["lmstudio", "ollama", "openrouter"] = "lmstudio"
+    base_url: str = Field(
+        default_factory=lambda data: (
+            OPENROUTER_BASE_URL
+            if data.get("runtime") == "openrouter"
+            else "http://localhost:1234/v1"
+        ),
+        validate_default=True,
+    )
     model: str = "qwen3.5-9b-uncensored-hauhaucs-aggressive"
 
     @field_validator("base_url")
     @classmethod
-    def local_only(cls, value: str) -> str:
+    def allowed_endpoint(cls, value: str, info: ValidationInfo) -> str:
+        if info.data.get("runtime") == "openrouter":
+            if value.rstrip("/") != OPENROUTER_BASE_URL:
+                raise ValueError("official OpenRouter HTTPS endpoint required")
+            return OPENROUTER_BASE_URL
         u = urlsplit(value)
         if (
             u.scheme not in {"http", "https"}
@@ -62,6 +75,22 @@ class Settings(BaseModel):
     distance_threshold: float = Field(default=0.25, gt=0, lt=1)
     api_timeout: float = Field(default=0, ge=0, le=86400, allow_inf_nan=False)
     inference: InferenceSettings = Field(default_factory=InferenceSettings)
+
+
+class SettingsUpdate(Settings):
+    # Credentials are accepted separately and never become job settings.
+    openrouter_api_key: SecretStr = Field(default_factory=lambda: SecretStr(""))
+
+    @field_validator("openrouter_api_key")
+    @classmethod
+    def valid_key(cls, value: SecretStr) -> SecretStr:
+        key = value.get_secret_value().strip()
+        if len(key) > 4096 or any(not 33 <= ord(c) <= 126 for c in key):
+            raise ValueError("invalid API key")
+        return SecretStr(key)
+
+    def settings(self) -> Settings:
+        return Settings.model_validate(self.model_dump(exclude={"openrouter_api_key"}))
 
 
 class Analysis(BaseModel):

@@ -53,7 +53,7 @@ class FakeAI:
     def __init__(self, settings):
         self.settings = settings
 
-    async def ensure_local(self, endpoint):
+    async def ensure_available(self, endpoint, *, role="generation"):
         pass
 
     async def analyze(self, bookmark, page):

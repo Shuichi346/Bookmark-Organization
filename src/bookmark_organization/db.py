@@ -1,5 +1,7 @@
 import json
+import os
 import sqlite3
+import tempfile
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -74,6 +76,33 @@ class Store:
         temp = path.with_suffix(".tmp")
         temp.write_text(settings.model_dump_json(indent=2))
         temp.replace(path)
+
+    def openrouter_api_key(self) -> str:
+        path = self.directory / "credentials.json"
+        if path.exists():
+            key = json.loads(path.read_text()).get("openrouter_api_key", "")
+            if key:
+                return key
+        return os.environ.get("OPENROUTER_API_KEY", "").strip()
+
+    def save_openrouter_api_key(self, key: str):
+        if not key:
+            return
+        # mkstemp creates the file with mode 0600 before writing any secret.
+        descriptor, name = tempfile.mkstemp(dir=self.directory, prefix=".credentials-")
+        path = Path(name)
+        try:
+            with os.fdopen(descriptor, "w") as file:
+                json.dump({"openrouter_api_key": key}, file)
+            path.replace(self.directory / "credentials.json")
+        finally:
+            path.unlink(missing_ok=True)
+
+    def public_settings(self) -> dict:
+        return {
+            **self.settings().model_dump(),
+            "openrouter_key_configured": bool(self.openrouter_api_key()),
+        }
 
     def import_html(self, raw: bytes, filename: str) -> str:
         tree = parse(raw)

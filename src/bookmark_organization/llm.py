@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 import httpx
 import numpy as np
@@ -18,8 +19,17 @@ SYSTEM = (
 
 
 class LocalAI:
-    def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.AsyncClient | None = None,
+        *,
+        api_key: str = "",
+    ):
         self.settings = settings
+        self.api_key = api_key
+        self.key_checked = False
+        self.model_parameters: dict[str, list[str]] = {}
         self.client = client or httpx.AsyncClient(
             trust_env=False,
             follow_redirects=False,
@@ -31,8 +41,41 @@ class LocalAI:
     async def close(self):
         await self.client.aclose()
 
-    async def models(self, endpoint: Endpoint) -> list[str]:
+    def headers(self, endpoint: Endpoint) -> dict[str, str]:
+        if endpoint.runtime != "openrouter":
+            return {}
+        if not self.api_key:
+            raise AppError("openrouter_key_required")
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "X-OpenRouter-Title": "Bookmark Organization",
+        }
+
+    def connection_error(self, exc: httpx.HTTPError, endpoint: Endpoint) -> AppError:
+        if endpoint.runtime == "openrouter" and isinstance(exc, httpx.HTTPStatusError):
+            code = {
+                401: "openrouter_auth",
+                403: "openrouter_auth",
+                402: "openrouter_credits",
+                429: "openrouter_rate_limit",
+            }.get(exc.response.status_code)
+            if code:
+                return AppError(code, 503)
+        return AppError("model_connection", 503)
+
+    async def models(
+        self,
+        endpoint: Endpoint,
+        *,
+        role: Literal["generation", "embedding"] = "generation",
+    ) -> list[str]:
         try:
+            if endpoint.runtime == "openrouter" and not self.key_checked:
+                response = await self.client.get(
+                    f"{endpoint.base_url}/key", headers=self.headers(endpoint)
+                )
+                response.raise_for_status()
+                self.key_checked = True
             if endpoint.runtime == "ollama":
                 root = endpoint.base_url.removesuffix("/v1")
                 response = await self.client.get(f"{root}/api/tags")
@@ -45,18 +88,58 @@ class LocalAI:
                     and not m.get("remote_host")
                     and "cloud" not in m["name"].lower()
                 ]
-            response = await self.client.get(f"{endpoint.base_url}/models")
+            path = (
+                "/embeddings/models"
+                if endpoint.runtime == "openrouter" and role == "embedding"
+                else "/models"
+            )
+            response = await self.client.get(
+                f"{endpoint.base_url}{path}", headers=self.headers(endpoint)
+            )
             response.raise_for_status()
+            if endpoint.runtime == "openrouter":
+                self.model_parameters.update(
+                    {
+                        m["id"]: m.get("supported_parameters", [])
+                        for m in response.json()["data"]
+                    }
+                )
+                return [
+                    m["id"]
+                    for m in response.json()["data"]
+                    if "text" in m.get("architecture", {}).get("input_modalities", [])
+                    and (
+                        (
+                            role == "embedding"
+                            and "embeddings"
+                            in m.get("architecture", {}).get("output_modalities", [])
+                        )
+                        or (
+                            role == "generation"
+                            and "text"
+                            in m.get("architecture", {}).get("output_modalities", [])
+                            and "structured_outputs"
+                            in m.get("supported_parameters", [])
+                        )
+                    )
+                ]
             return [
                 m["id"]
                 for m in response.json()["data"]
                 if "cloud" not in m["id"].lower()
             ]
-        except (httpx.HTTPError, KeyError, ValueError) as exc:
+        except httpx.HTTPError as exc:
+            raise self.connection_error(exc, endpoint) from exc
+        except (KeyError, ValueError, TypeError) as exc:
             raise AppError("model_connection", 503) from exc
 
-    async def ensure_local(self, endpoint: Endpoint):
-        if endpoint.model not in await self.models(endpoint):
+    async def ensure_available(
+        self,
+        endpoint: Endpoint,
+        *,
+        role: Literal["generation", "embedding"] = "generation",
+    ):
+        if endpoint.model not in await self.models(endpoint, role=role):
             raise AppError("model_unavailable", 503)
 
     def sampling(self) -> dict:
@@ -122,7 +205,31 @@ class LocalAI:
                     },
                 },
             }
-        response = await self.client.post(url, json=payload)
+            if endpoint.runtime == "openrouter":
+                # OpenRouter uses its unified reasoning and repetition names.
+                payload.pop("reasoning_effort", None)
+                if endpoint.model not in self.model_parameters:
+                    await self.ensure_available(endpoint)
+                supported = self.model_parameters[endpoint.model]
+                if app:
+                    payload["repetition_penalty"] = payload.pop("repeat_penalty")
+                    payload["reasoning"] = {
+                        "enabled": self.settings.inference.thinking,
+                        "exclude": True,
+                    }
+                    for parameter in [
+                        *self.sampling(),
+                        "repetition_penalty",
+                        "reasoning",
+                    ]:
+                        if parameter not in supported:
+                            payload.pop(parameter, None)
+                    if payload.get("repetition_penalty", 1) > 2:
+                        raise AppError("openrouter_parameter")
+                payload["provider"] = {"require_parameters": True}
+        response = await self.client.post(
+            url, json=payload, headers=self.headers(endpoint)
+        )
         response.raise_for_status()
         result = response.json()
         if endpoint.runtime == "ollama":
@@ -166,7 +273,7 @@ class LocalAI:
                 analysis = Analysis.model_validate_json(content)
                 return analysis.model_dump()
             except httpx.HTTPError as exc:
-                raise AppError("model_connection", 503) from exc
+                raise self.connection_error(exc, self.settings.generation) from exc
             except (KeyError, IndexError, ValueError, ValidationError, TypeError):
                 if attempt == 1:
                     raise AppError("analysis_invalid") from None
@@ -185,7 +292,13 @@ class LocalAI:
         try:
             response = await self.client.post(
                 f"{endpoint.base_url}/embeddings",
-                json={"model": endpoint.model, "input": EMBEDDING_PREFIX + content},
+                headers=self.headers(endpoint),
+                json={
+                    "model": endpoint.model,
+                    "input": content
+                    if endpoint.runtime == "openrouter"
+                    else EMBEDDING_PREFIX + content,
+                },
             )
             response.raise_for_status()
             vector = np.array(response.json()["data"][0]["embedding"], dtype=float)
@@ -198,7 +311,7 @@ class LocalAI:
                 raise ValueError("invalid embedding")
             vector /= np.linalg.norm(vector)
         except httpx.HTTPError as exc:
-            raise AppError("model_connection", 503) from exc
+            raise self.connection_error(exc, endpoint) from exc
         except (ValueError, KeyError, IndexError, TypeError) as exc:
             raise AppError("embedding_invalid") from exc
         return {

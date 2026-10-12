@@ -19,6 +19,7 @@ CHECKS = {
         "tests/test_bookmarks.py",
         "tests/test_fetching.py",
         "tests/test_llm.py",
+        "tests/test_settings.py",
         "tests/test_jobs.py",
         "tests/test_organizing.py",
         "tests/test_i18n.py",

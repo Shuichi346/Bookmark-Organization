@@ -26,7 +26,7 @@ from bookmark_organization.schemas import (
     ItemEdit,
     JobRequest,
     ProposalRequest,
-    Settings,
+    SettingsUpdate,
 )
 
 PACKAGE = Path(__file__).parent
@@ -150,7 +150,7 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
                 "job": job,
                 "proposal": p,
                 "csrf": token,
-                "settings": store.settings().model_dump(),
+                "settings": store.public_settings(),
                 "preference": request.cookies.get("language", "auto"),
                 "js": manifest["file"],
                 "css": manifest.get("css", []),
@@ -193,20 +193,25 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
 
     @application.get("/api/settings")
     async def settings():
-        return store.settings().model_dump()
+        return store.public_settings()
 
     @application.put("/api/settings")
-    async def save_settings(values: Settings):
-        store.save_settings(values)
-        return values.model_dump()
+    async def save_settings(values: SettingsUpdate):
+        store.save_openrouter_api_key(values.openrouter_api_key.get_secret_value())
+        store.save_settings(values.settings())
+        return store.public_settings()
 
     @application.post("/api/settings/probe")
-    async def probe(values: Settings):
-        ai = LocalAI(values)
+    async def probe(values: SettingsUpdate):
+        ai = LocalAI(
+            values.settings(),
+            api_key=values.openrouter_api_key.get_secret_value()
+            or store.openrouter_api_key(),
+        )
         try:
             return {
                 "generation": await ai.models(values.generation),
-                "embedding": await ai.models(values.embedding),
+                "embedding": await ai.models(values.embedding, role="embedding"),
             }
         finally:
             await ai.close()
@@ -231,9 +236,11 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
                     store, identifier, bool(values and values.allow_incomplete)
                 )
             }
-        if action not in {"pause", "resume", "retry-failed"}:
+        if action not in {"pause", "resume", "retry-failed", "cancel"}:
             raise AppError("not_found", 404)
         control(store, identifier, action)
+        if action == "cancel":
+            worker.cancel(identifier)
         worker.wake.set()
         return {"id": identifier}
 

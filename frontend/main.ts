@@ -6,7 +6,7 @@ htmx.config.includeIndicatorStyles = false;
 
 type Node = {id:string;kind:string;name:string;parent:string;order:number};
 type Endpoint = {runtime:string;base_url:string;model:string};
-type Settings = {generation:Endpoint;embedding:Endpoint;[key:string]:unknown};
+type Settings = {generation:Endpoint;embedding:Endpoint;openrouter_key_configured?:boolean;[key:string]:unknown};
 const messages:Record<string,string> = JSON.parse(document.querySelector("#messages")!.textContent!);
 const tree:Node[] = JSON.parse(document.querySelector("#tree-data")!.textContent!);
 const settings:Settings = JSON.parse(document.querySelector("#settings-data")!.textContent!);
@@ -103,9 +103,10 @@ function formSettings():Settings {
  const form=query<HTMLFormElement>("#settings-form");const values=new FormData(form);
  const result=structuredClone(settings);
  for(const key of ["generation","embedding"] as const) {
-  result[key]={runtime:String(values.get(key+".runtime")),base_url:String(values.get(key+".base_url")),model:String(values.get(key+".model"))};
+  result[key]={runtime:String(values.get(key+".runtime")),base_url:String(values.get(key+".base_url")),model:String(values.get(key+".model")).trim()};
  }
- for(const [key,value] of values.entries()) if(!key.includes(".")) result[key]=key==="rendering"?true:Number(value);
+ for(const [key,value] of values.entries()) if(!key.includes(".") && key!=="openrouter_api_key") result[key]=key==="rendering"?true:Number(value);
+ result.openrouter_api_key=query<HTMLInputElement>("#openrouter-api-key").value.trim();
  const inference:Record<string,unknown>={
   source:query<HTMLSelectElement>("#inference-source").value,
   thinking:query<HTMLSelectElement>('select[name="inference.thinking"]').value==="on",
@@ -127,22 +128,57 @@ function updateInferenceControls() {
 query<HTMLSelectElement>("#inference-source").addEventListener("change",updateInferenceControls);
 document.querySelectorAll<HTMLInputElement>('input[name^="enable."]').forEach(input=>input.addEventListener("change",updateInferenceControls));
 updateInferenceControls();
+const modelCandidates:Record<string,string[]>={generation:[settings.generation.model],embedding:[settings.embedding.model]};
+function updateModelCandidates(key:string, filter=false) {
+ const input=query<HTMLInputElement>('input[name="'+key+'.model"]');
+ const select=query<HTMLSelectElement>("#"+key+"-models");
+ const term=input.value.trim().toLowerCase();
+ select.replaceChildren(new Option(t("choose_model"),""));
+ for(const model of modelCandidates[key]) {
+  if(!filter || model.toLowerCase().includes(term)) select.add(new Option(model,model));
+ }
+ if(modelCandidates[key].includes(input.value.trim())) select.value=input.value.trim();
+}
+for(const key of ["generation","embedding"]) {
+ query<HTMLInputElement>('input[name="'+key+'.model"]').addEventListener("input",()=>updateModelCandidates(key,true));
+ query<HTMLSelectElement>("#"+key+"-models").addEventListener("change",event=>{
+  const model=(event.target as HTMLSelectElement).value;
+  if(model) query<HTMLInputElement>('input[name="'+key+'.model"]').value=model;
+ });
+ updateModelCandidates(key);
+}
+function updateProviders() {
+ const openrouter=["generation","embedding"].some(key=>query<HTMLSelectElement>('select[name="'+key+'.runtime"]').value==="openrouter");
+ query<HTMLElement>("#openrouter-settings").hidden=!openrouter;
+ for(const key of ["generation","embedding"]) {
+  query<HTMLInputElement>('input[name="'+key+'.base_url"]').readOnly=query<HTMLSelectElement>('select[name="'+key+'.runtime"]').value==="openrouter";
+ }
+}
 document.querySelectorAll<HTMLSelectElement>('select[name$=".runtime"]').forEach(select=>select.addEventListener("change",()=>{
  const key=select.name.split(".")[0];
- query<HTMLInputElement>('input[name="'+key+'.base_url"]').value=select.value==="ollama"?"http://localhost:11434/v1":"http://localhost:1234/v1";
+ const urls:Record<string,string>={lmstudio:"http://localhost:1234/v1",ollama:"http://localhost:11434/v1",openrouter:"https://openrouter.ai/api/v1"};
+ query<HTMLInputElement>('input[name="'+key+'.base_url"]').value=urls[select.value];
+ query<HTMLInputElement>('input[name="'+key+'.model"]').value="";
+ modelCandidates[key]=[];
+ updateModelCandidates(key);
+ query<HTMLElement>("#settings-feedback").textContent="";
+ updateProviders();
 }));
+updateProviders();
 query<HTMLButtonElement>("#probe").addEventListener("click",()=>void safely(async()=>{
  const result=await api("/api/settings/probe","POST",formSettings());
  for(const key of ["generation","embedding"]) {
-  const select=query<HTMLSelectElement>('select[name="'+key+'.model"]');const chosen=select.value;select.replaceChildren();
-  for(const model of result[key]) select.add(new Option(model,model));
-  if(result[key].includes(chosen)) select.value=chosen;
+  modelCandidates[key]=result[key];
+  updateModelCandidates(key);
  }
  query<HTMLElement>("#settings-feedback").textContent=t("connected");
 }));
 query<HTMLFormElement>("#settings-form").addEventListener("submit",event=>{
  event.preventDefault();void safely(async()=>{
-  await api("/api/settings","PUT",formSettings());
+  const saved=await api("/api/settings","PUT",formSettings());
+  Object.assign(settings,saved);
+  query<HTMLInputElement>("#openrouter-api-key").value="";
+  query<HTMLElement>("#openrouter-key-help").textContent=t(saved.openrouter_key_configured?"openrouter_key_saved":"openrouter_key_help");
   query<HTMLElement>("#settings-feedback").textContent=t("saved");
  });
 });

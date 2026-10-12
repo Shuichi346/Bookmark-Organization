@@ -1,5 +1,7 @@
 # Bookmark Organization — Requirements and Implementation Plan
 
+Current-scope amendment (2026-10-12): the user explicitly added OpenRouter via its OpenAI-compatible API. The local-only requirement below remains historical for the original implementation and continues to apply to LM Studio/Ollama. OpenRouter is an opt-in exception using only its official HTTPS endpoint; local inference never falls back to it automatically. Details and current verification are recorded in the amendment at the end of this document.
+
 ## Progress Status
 
 This section is the sole authoritative progress checklist. Implementation was requested on 2026-10-11. Execute I1–I8 and V1–V4 continuously; no publication, Chrome writes, or model downloads are authorized.
@@ -278,3 +280,23 @@ Required verification is complete: ruff 6, format 6, ty 5, frontend lint/typeche
 The HTTPS fetcher now supplies a string SNI hostname, matching HTTPX/httpcore and AnyIO's TLS contract. The previous bytes value raised an AttributeError before HTTPS content could be retrieved. Unexpected retrieval exceptions are logged for diagnosis. A worker-owned request pacer spaces request starts at least 0.5 seconds apart across concurrent pages, redirects, optional rendered subresources and manually retried batches. No automatic failure retries or robots.txt checks were added. The settings grid excludes checkboxes from full-width input styling, preventing vertically wrapped sampling labels.
 
 Verification: all 55 unit tests passed, including the real HTTPX asynchronous transport/AnyIO hostname path, concurrent redirect pacing and pacing across worker-created clients. Ruff, formatting, ty and the production frontend build passed. The browser smoke workflow passed in English/Japanese at desktop/mobile widths, with explicit checkbox-width and label-height assertions. Playwright screenshots at 1440 and 390 pixels confirmed the corrected settings layout. The browser console reported only an unrelated favicon 404. Live retrieval succeeded for IRBANK and Multpl; BLS returned a correctly classified HTTP 403. The production server was restarted at 127.0.0.1:8765 and its health endpoint returned 200. The existing failed bookmark job was not automatically retried.
+
+
+## OpenRouter amendment — 2026-10-12
+
+Implemented explicit OpenRouter generation and embedding provider selection, fixed official HTTPS endpoint, key validation and role-specific discovery, model-supported OpenAI-compatible payloads, independent local/cloud combinations and localized API failures. API keys remained outside immutable job snapshots and settings responses, with password entry, owner-only credential storage, blank-value retention and server environment fallback. Provider/model snapshots remained unchanged when settings or keys were updated. The current scope superseded the original local-only policy solely for explicitly selected OpenRouter endpoints.
+
+Verification passed: ruff check/format, ty, frontend lint/typecheck/build, all 88 unit tests, the real-server browser smoke workflow and focused final-layout QA. English/Japanese provider switching, mocked discovery, save/reload and blank key presentation passed at 1440/390 pixels without viewport overflow or JavaScript/console errors. Browser plugin was unavailable; installed Playwright supplied the browser checks and external synthetic screenshots. The first new UI run failed on a missing await in test code; its repaired rerun passed. The public OpenRouter embedding model catalog returned HTTP 200 and expected metadata. The app started on 127.0.0.1:8765 and health/page returned HTTP 200.
+
+Authenticated OpenRouter inference remained unverified because no API key was configured. The actual-local-model harness was unavailable for this change because both configured LM Studio API checks returned ConnectError; historical actual-model evidence above was not represented as a new run. No user bookmarks were processed, models downloaded, Chrome profiles changed, commits made or external publication performed.
+
+
+### Editable model IDs — 2026-10-12
+
+The user added direct model-ID entry as an alternative to dropdown selection. Both model roles now have a text field and a labeled suggestion select; typing filters candidates, discovery preserves input and saving trims surrounding whitespace. Provider and processing-time validation contracts were unchanged. Frontend lint/typecheck/build, Python static checks, 13 locale checks, the existing browser smoke workflow and focused English/Japanese QA at 1440/390 pixels passed, including candidate selection and independent save/reload persistence without browser errors or page overflow. This was a UI-only amendment; no real inference or production model-setting writes were needed.
+
+### Job cancellation — 2026-10-12
+
+Added terminal cancellation for running/paused jobs and the requested Japanese conflict message, with matching English controls and guidance. Cancellation interrupted the active batch task while retaining original imports, immutable settings and saved results, and allowed a new job in the same project. Cancelled jobs remained terminal across restart and could not resume, retry or create proposals. The worker continued serving subsequent jobs.
+
+Verification passed: 93 unit tests, ruff/format/ty, frontend lint/typecheck/build and the real-server browser smoke workflow. Synthetic blocked clients covered availability/retrieval/analysis/embedding cancellation and cleanup. English/Japanese UI checks covered running/paused cancellation, reload, new-job creation and no overflow at 1440/390 pixels, with no unexpected console errors. Playwright screenshots were inspected outside the repository because Browser plugin was unavailable. The initial new browser assertions failed on an ambiguous heading and an expected validation error log; corrected assertions passed. The production server was restarted at `127.0.0.1:8765`. Actual model-provider cancellation was not tested, and disconnecting application requests does not guarantee provider-side work stops. Existing user jobs were not explicitly cancelled, and no model settings or credentials were changed.

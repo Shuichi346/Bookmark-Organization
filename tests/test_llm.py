@@ -224,3 +224,201 @@ async def test_ollama_cloud_models_are_excluded():
 def test_endpoint_restriction(endpoint):
     with pytest.raises(ValidationError):
         Endpoint(base_url=endpoint)
+
+
+OPENROUTER_MODEL = {
+    "id": "openai/test-chat",
+    "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+    "supported_parameters": [
+        "structured_outputs",
+        "response_format",
+        "temperature",
+        "top_p",
+        "presence_penalty",
+        "reasoning",
+    ],
+}
+
+
+@pytest.mark.parametrize("source", ["app", "runtime"])
+@pytest.mark.parametrize("thinking", [False, True])
+async def test_openrouter_chat_embeddings_and_local_mixing(source, thinking):
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        if request.method == "GET":
+            if request.url.path.endswith("/key"):
+                return httpx.Response(200, json={"data": {"label": "test"}})
+            return httpx.Response(200, json={"data": [OPENROUTER_MODEL]})
+        if request.url.path.endswith("/embeddings"):
+            return httpx.Response(200, json={"data": [{"embedding": [3, 4]}]})
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": json.dumps(ANALYSIS)},
+                    }
+                ]
+            },
+        )
+
+    settings = Settings(
+        generation=Endpoint(runtime="openrouter", model="openai/test-chat"),
+        inference=InferenceSettings(source=source, thinking=thinking),
+    )
+    ai = LocalAI(
+        settings,
+        httpx.AsyncClient(transport=httpx.MockTransport(handle)),
+        api_key="test-secret",
+    )
+    for name in ["ALPHA_ONLY", "BETA_ONLY"]:
+        await ai.analyze({"url": "https://example.com/" + name, "name": name}, PAGE)
+    posts = [r for r in requests if r.method == "POST"]
+    payloads = [json.loads(r.content) for r in posts]
+    assert len(posts) == 2
+    assert all(r.url.path == "/api/v1/chat/completions" for r in posts)
+    assert all(r.headers["authorization"] == "Bearer test-secret" for r in posts)
+    assert "BETA_ONLY" not in json.dumps(payloads[0])
+    assert "ALPHA_ONLY" not in json.dumps(payloads[1])
+    assert payloads[0]["response_format"]["json_schema"]["strict"] is True
+    assert payloads[0]["provider"] == {"require_parameters": True}
+    assert not {
+        "repeat_penalty",
+        "repetition_penalty",
+        "top_k",
+        "min_p",
+        "reasoning_effort",
+    }.intersection(payloads[0])
+    if source == "app":
+        assert payloads[0]["reasoning"] == {"enabled": thinking, "exclude": True}
+        assert payloads[0]["temperature"] == 0.7
+    else:
+        assert "reasoning" not in payloads[0]
+        assert "temperature" not in payloads[0]
+    # The cloud key is never forwarded to a local runtime.
+    await ai.embed(PAGE, ANALYSIS)
+    assert "authorization" not in requests[-1].headers
+    assert json.loads(requests[-1].content)["input"].startswith(EMBEDDING_PREFIX)
+    settings.embedding = Endpoint(runtime="openrouter", model="openai/test-embedding")
+    vector = await ai.embed(PAGE, ANALYSIS)
+    assert vector["vector"] == [0.6, 0.8]
+    assert requests[-1].url.path == "/api/v1/embeddings"
+    assert requests[-1].headers["authorization"] == "Bearer test-secret"
+    assert not json.loads(requests[-1].content)["input"].startswith(EMBEDDING_PREFIX)
+    await ai.close()
+
+
+async def test_openrouter_model_discovery_filters_by_role():
+    requests = []
+    embedding = {
+        "id": "openai/test-embedding",
+        "architecture": {
+            "input_modalities": ["text"],
+            "output_modalities": ["embeddings"],
+        },
+    }
+    other = {
+        "id": "image/model",
+        "architecture": {"input_modalities": ["image"], "output_modalities": ["image"]},
+    }
+    plain = dict(OPENROUTER_MODEL, id="plain/chat", supported_parameters=[])
+
+    def handle(request):
+        requests.append(request)
+        return httpx.Response(
+            200, json={"data": [OPENROUTER_MODEL, embedding, other, plain]}
+        )
+
+    ai = LocalAI(
+        Settings(),
+        httpx.AsyncClient(transport=httpx.MockTransport(handle)),
+        api_key="test-secret",
+    )
+    endpoint = Endpoint(runtime="openrouter")
+    assert await ai.models(endpoint) == ["openai/test-chat"]
+    assert await ai.models(endpoint, role="embedding") == ["openai/test-embedding"]
+    assert [r.url.path for r in requests] == [
+        "/api/v1/key",
+        "/api/v1/models",
+        "/api/v1/embeddings/models",
+    ]
+    assert all(r.headers["authorization"] == "Bearer test-secret" for r in requests)
+    with pytest.raises(AppError) as error:
+        await ai.ensure_available(endpoint)
+    assert error.value.code == "model_unavailable"
+    await ai.close()
+
+
+@pytest.mark.parametrize(
+    "status,code",
+    [
+        (401, "openrouter_auth"),
+        (403, "openrouter_auth"),
+        (402, "openrouter_credits"),
+        (429, "openrouter_rate_limit"),
+        (500, "model_connection"),
+        (302, "model_connection"),
+    ],
+)
+@pytest.mark.parametrize("operation", ["models", "analyze", "embed"])
+async def test_openrouter_errors_are_localized_and_not_retried(status, code, operation):
+    requests = []
+
+    def handle(request):
+        requests.append(request)
+        if operation == "analyze" and request.method == "GET":
+            return httpx.Response(200, json={"data": [OPENROUTER_MODEL]})
+        return httpx.Response(
+            status,
+            headers={"location": "https://elsewhere.example/api"},
+            json={"error": {"message": "test-secret"}},
+        )
+
+    endpoint = Endpoint(runtime="openrouter", model="openai/test-chat")
+    ai = LocalAI(
+        Settings(generation=endpoint, embedding=endpoint),
+        httpx.AsyncClient(transport=httpx.MockTransport(handle)),
+        api_key="test-secret",
+    )
+    with pytest.raises(AppError) as error:
+        if operation == "models":
+            await ai.models(endpoint)
+        elif operation == "analyze":
+            await ai.analyze({"url": "https://example.com", "name": "Example"}, PAGE)
+        else:
+            await ai.embed(PAGE, ANALYSIS)
+    assert error.value.code == code
+    assert len(requests) == (3 if operation == "analyze" else 1)
+    await ai.close()
+
+
+async def test_openrouter_requires_key_before_network_access():
+    requests = []
+    ai = LocalAI(
+        Settings(),
+        httpx.AsyncClient(transport=httpx.MockTransport(lambda r: requests.append(r))),
+    )
+    with pytest.raises(AppError) as error:
+        await ai.models(Endpoint(runtime="openrouter"))
+    assert error.value.code == "openrouter_key_required"
+    assert not requests
+    await ai.close()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://openrouter.ai/api/v1",
+        "https://openrouter.ai.evil.example/api/v1",
+        "https://user:secret@openrouter.ai/api/v1",
+        "https://openrouter.ai/api/v1?x=1",
+        "https://openrouter.ai/api/v1#x",
+        "http://localhost:1234/v1",
+    ],
+)
+def test_openrouter_only_allows_its_official_endpoint(url):
+    with pytest.raises(ValidationError):
+        Endpoint(runtime="openrouter", base_url=url)
