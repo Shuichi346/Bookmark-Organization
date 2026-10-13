@@ -429,6 +429,18 @@ async def verify():
                         await expect(
                             page.locator(".edit-parent").first
                         ).to_contain_text("開発・プログラミング")
+                        details = page.locator("#comparison tbody details")
+                        await expect(details).to_have_count(3)
+                        await expect(details.first.locator("summary")).to_have_text(
+                            "Analysis details" if lang == "en" else "分析の詳細"
+                        )
+                        await details.first.locator("summary").click()
+                        await expect(details.first.locator("p").first).to_have_text(
+                            "開発用ドキュメントです。"
+                        )
+                        await expect(details.first.locator("p").last).to_have_text(
+                            "開発者が技術を学ぶための公式ドキュメント。"
+                        )
                         await page.locator(".edit-name").first.fill(
                             "Edited 日本語 name"
                         )

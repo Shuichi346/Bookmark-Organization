@@ -1,5 +1,7 @@
 # Bookmark Organization — Requirements and Implementation Plan
 
+Current-scope amendment (2026-10-13): the user requested removing model-generated fields unused by downstream processing and explicitly waived historical output-format compatibility. Analysis now requests only suggested name, summary, purpose and destination category under `bookmark-ja-purpose-v3`; summary and purpose remain embedding inputs. Type and tags are no longer generated, including on subsequent analysis requests for saved jobs. See NOTES.md for the rationale and current verification limits; historical evidence below describes earlier output formats.
+
 Current-scope amendment (2026-10-13): new jobs use purpose-first Japanese names and task-based folders, superseding free-form semantic category placement for those jobs. Existing snapshots retain their original policy. See the completed purpose-policy amendment below.
 
 Current-scope amendment (2026-10-12): the user explicitly added OpenRouter via its OpenAI-compatible API. The local-only requirement below remains historical for the original implementation and continues to apply to LM Studio/Ollama. OpenRouter is an opt-in exception using only its official HTTPS endpoint; local inference never falls back to it automatically. Details and current verification are recorded in the amendment at the end of this document.

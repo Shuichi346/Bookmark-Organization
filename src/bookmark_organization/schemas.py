@@ -98,12 +98,10 @@ class SettingsUpdate(Settings):
 class Analysis(BaseModel):
     suggested_name: str = Field(min_length=1, max_length=200)
     summary: str = Field(min_length=1, max_length=2000)
-    type: str = Field(min_length=1, max_length=100)
     purpose: str = Field(min_length=1, max_length=1000)
     candidate_categories: list[str] = Field(min_length=1, max_length=10)
-    tags: list[str] = Field(max_length=20)
 
-    @field_validator("candidate_categories", "tags")
+    @field_validator("candidate_categories")
     @classmethod
     def bounded_labels(cls, values: list[str]) -> list[str]:
         if any(not v.strip() or len(v) > 100 for v in values):

@@ -7,6 +7,11 @@
 - Unified new Japanese suggestions as specific purpose｜proper name, with page-specific names for documents, articles, Q&A and products and optional GitHub type/language suffixes.
 - Assigned folders by each page's intended task, keeping sites, repositories and articles together and using semantic groups for related-item ordering. Created only needed categories, with at most two levels below the destination and sparse or redundant subfolders merged into their parent.
 - Preserved saved naming/grouping policies when resuming or retrying existing jobs.
+- Limited model-generated analysis to the suggested name, summary, purpose and destination category, retaining summary and purpose for embeddings.
+
+### Removed
+
+- Removed unused page-type and tag generation from analysis prompts and structured-output schemas, and removed their display from comparison details.
 
 ### Added
 

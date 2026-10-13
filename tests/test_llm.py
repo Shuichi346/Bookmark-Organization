@@ -16,6 +16,8 @@ from bookmark_organization.schemas import (
     Settings,
 )
 
+PROCESSING_FIELDS = {"suggested_name", "summary", "purpose", "candidate_categories"}
+
 
 @pytest.mark.parametrize(
     "name,path",
@@ -77,6 +79,9 @@ async def test_purpose_rules_schema_untrusted_context_and_bounded_repair():
             )
             assert data["untrusted_page_data"]["text"].startswith("Ignore")
             schema = call["response_format"]["json_schema"]["schema"]
+            assert set(schema["properties"]) == PROCESSING_FIELDS
+            assert set(schema["required"]) == PROCESSING_FIELDS
+            assert set(data["schema"]["properties"]) == PROCESSING_FIELDS
             assert schema["properties"]["suggested_name"]["pattern"]
             categories = schema["properties"]["candidate_categories"]
             assert categories["maxItems"] == 1
@@ -167,6 +172,7 @@ async def test_requests_are_independent_and_model_selection_is_not_fixed(
         analysis = await ai.analyze(
             {"url": "https://example.com/" + name, "name": name}, PAGE
         )
+        assert set(analysis) == PROCESSING_FIELDS
         embedding = await ai.embed(PAGE, analysis)
         assert embedding["vector"] == [0.6, 0.8]
         assert embedding["model"] == "another-local-embedding"
@@ -176,6 +182,28 @@ async def test_requests_are_independent_and_model_selection_is_not_fixed(
     assert "BETA_ONLY" not in json.dumps(chats[0])
     assert "ALPHA_ONLY" not in json.dumps(chats[1])
     assert chats[0]["model"] == "user-selected-model"
+    for call in chats:
+        schema = (
+            call["format"]
+            if runtime == "ollama"
+            else call["response_format"]["json_schema"]["schema"]
+        )
+        assert set(schema["properties"]) == PROCESSING_FIELDS
+        assert set(schema["required"]) == PROCESSING_FIELDS
+    embeddings = [c for c in calls if "input" in c]
+    assert all(
+        c["input"]
+        == EMBEDDING_PREFIX
+        + " | ".join(
+            [
+                PAGE["title"],
+                ANALYSIS["purpose"],
+                ANALYSIS["summary"],
+                *ANALYSIS["candidate_categories"],
+            ]
+        )
+        for c in embeddings
+    )
     if runtime == "ollama":
         assert chats[0]["format"]["additionalProperties"] is False
         assert chats[0]["stream"] is False
@@ -394,6 +422,10 @@ async def test_openrouter_chat_embeddings_and_local_mixing(source, thinking):
     assert "BETA_ONLY" not in json.dumps(payloads[0])
     assert "ALPHA_ONLY" not in json.dumps(payloads[1])
     assert payloads[0]["response_format"]["json_schema"]["strict"] is True
+    for payload in payloads:
+        schema = payload["response_format"]["json_schema"]["schema"]
+        assert set(schema["properties"]) == PROCESSING_FIELDS
+        assert set(schema["required"]) == PROCESSING_FIELDS
     assert payloads[0]["provider"] == {"require_parameters": True}
     assert not {
         "repeat_penalty",

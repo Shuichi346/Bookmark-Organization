@@ -10,6 +10,12 @@ Cluster-majority labels and singleton demotion could override a page's intended 
 
 Verified: 131 unit tests, Python static checks and the English/Japanese Playwright workflow at desktop/mobile widths passed. Actual selected OpenRouter models passed analysis, embeddings and export on two synthetic documents. Local-model inference and live retrieval were not reverified. Detailed model IDs, samples and acceptance evidence remain in the 2026-10-13 purpose-policy amendment in `PLANS.md`.
 
+### Downstream-only analysis output
+
+Page type and tags were display-only outputs; neither contributed to folder placement nor embedding input. They were removed from the shared analysis schema and purpose prompt, with `bookmark-ja-purpose-v3` marking the reduced output. Summary and purpose remained because the embedding model consumed both for related-item ordering. The comparison details displayed those two fields with a localized summary label. The user explicitly waived historical output-format compatibility, so no old-schema generation adapter was introduced. Saved analysis data was not rewritten.
+
+Verified: all 131 unit tests, ruff check/format, ty and the English/Japanese real-server browser workflow at desktop/mobile widths passed. Mock transports checked the four-field schemas for LM Studio, Ollama and OpenRouter and unchanged embedding input. The LM Studio-specific harness stopped before inference because the current selections were OpenRouter. Two synthetic fixtures using the selected `nvidia/nemotron-3-super-120b-a12b:free` generation and `nvidia/nemotron-3-embed-1b:free` embedding models returned exactly the four required fields, normalized 2048-dimensional embeddings and an integrity-validated export preserving all three URLs, including a synthetic 404. Frontend sources/assets were unchanged, so no rebuild was needed. The app was restarted after confirming no running or paused jobs; its health endpoint passed. No speed comparison or new local-model inference was performed.
+
 ## 2026-10-12
 
 ### Job cancellation

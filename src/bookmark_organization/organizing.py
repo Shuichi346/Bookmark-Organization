@@ -7,7 +7,7 @@ from sklearn.cluster import AgglomerativeClustering
 
 from bookmark_organization.bookmarks import uid
 from bookmark_organization.integrity import validate
-from bookmark_organization.policy import MIN_SUBFOLDER_ITEMS, PROMPT_VERSION
+from bookmark_organization.policy import LEGACY_PROMPT_VERSION, MIN_SUBFOLDER_ITEMS
 from bookmark_organization.schemas import AppError, JobRequest, PurposeAnalysis
 
 FAILURE_FOLDERS = {
@@ -137,7 +137,9 @@ def propose(
     groups: dict[int, list[dict]] = {}
     for item, label in zip(good, labels):
         groups.setdefault(label, []).append(item)
-    purpose_based = snapshot.get("prompt_version") == PROMPT_VERSION
+    purpose_based = (
+        snapshot.get("prompt_version", LEGACY_PROMPT_VERSION) != LEGACY_PROMPT_VERSION
+    )
     paths: dict[str, list[str]] = {}
     names: dict[str, str] = {}
     if purpose_based:

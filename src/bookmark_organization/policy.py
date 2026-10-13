@@ -1,7 +1,7 @@
 """Versioned naming and purpose-based folder rules for new analyses."""
 
 LEGACY_PROMPT_VERSION = "bookmark-ja-v1"
-PROMPT_VERSION = "bookmark-ja-purpose-v2"
+PROMPT_VERSION = "bookmark-ja-purpose-v3"
 MIN_SUBFOLDER_ITEMS = 3
 VAGUE_LABELS = {"便利", "おすすめ", "その他", "画像ツール", "開発関連"}
 SOURCE_LABELS = {"GitHub", "Webサービス", "記事", "ブログ", "公式サイト"}
@@ -56,7 +56,7 @@ suggested_name は必ず「具体的な用途｜固有名詞」の形式にす�
 - 掲示板・Q&A: 問題・解決内容｜サイト名。例: Dockerの権限エラーを解決｜Stack Overflow
 - 商品・サービスの個別ページ: 商品名・検討目的｜サイト名。例: USB-Cハブの仕様確認｜メーカー名
 サイト全体と特定ページを区別し、個別ページにはそのページ固有の内容を名前にする。
-purpose には主な利用目的と探す状況を、type にはページの種類を記す。
+purpose には主な利用目的と探す状況を記す。
 
 candidate_categories は保存先の用途パスを1つだけ選ぶ（上位用途 または 上位用途/下位用途）。
 以下の構成例を優先し、当てはまらない場合は同じ目的基準で具体的な用途名を付ける。

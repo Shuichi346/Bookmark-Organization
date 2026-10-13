@@ -17,9 +17,7 @@ ANALYSIS = {
     "suggested_name": "Example ドキュメント",
     "summary": "開発用ドキュメントです。",
     "purpose": "開発者が技術を学ぶための公式ドキュメント。",
-    "type": "documentation",
     "candidate_categories": ["開発"],
-    "tags": ["docs"],
 }
 PURPOSE_ANALYSIS = {
     **ANALYSIS,
