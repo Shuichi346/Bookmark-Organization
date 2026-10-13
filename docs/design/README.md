@@ -37,3 +37,7 @@ Both role selectors include OpenRouter alongside LM Studio and Ollama. Selecting
 ## Editable model fields
 
 Generation and embedding model fields each pair a native text input with a labeled suggestion select. Users can type exact IDs or pick suggestions, which the app filters as they type. Discovery replaces only the candidate lists, preserving current input even when it is absent from the returned catalog. Provider changes clear the corresponding field and stale candidates; saving trims surrounding whitespace. Model availability and role validation at processing time remain unchanged.
+
+## Codex provider amendment
+
+Only the content-analysis provider selector offers Codex (ChatGPT plan). Selecting it fixes the model to `gpt-6-luna` and reasoning to `low`, marks the model field read-only, hides the endpoint/candidate fields and unsupported sampling/output-token controls, and explains subscription usage and `codex login`. Switching away restores the ordinary controls and retains their values. The embedding selector remains independently configured with LM Studio, Ollama or OpenRouter. Discovery checks CLI login and the catalog; only successful analysis verifies actual model access. Save/reload preserves the fixed selection. Missing CLI, non-ChatGPT login, quota and response-wait failures use synchronized English/Japanese catalog messages.

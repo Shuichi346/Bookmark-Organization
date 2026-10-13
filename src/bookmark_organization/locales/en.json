@@ -59,7 +59,7 @@
   "embedding_model": "Embedding model",
   "endpoint": "API endpoint",
   "probe": "Discover models / test connection",
-  "model_help": "Choose LM Studio, Ollama or OpenRouter independently for content analysis and embeddings.",
+  "model_help": "Choose providers independently. Codex is available for content analysis; use LM Studio, Ollama or OpenRouter for embeddings.",
   "advanced": "Advanced settings",
   "overall_timeout": "Retrieval limit (seconds)",
   "connect_timeout": "Connection timeout (seconds)",
@@ -136,5 +136,14 @@
   "github_naming_rule": "For GitHub, use purpose｜repository［type or technology when needed］. Examples: 動画をダウンロード｜yt-dlp［CLI］ and HTTP通信を実装｜HTTPX［Python］. Distinguish apps, libraries, examples and curated lists by their use; add a suffix only when it helps identify them.",
   "folder_rule": "Folders support browsing: classify by the task for which you would open the page. Suggested areas are AI and machine learning, images and video, development, files and documents, research and learning, macOS and system, and everyday life and shopping. Keep official sites, GitHub repositories and articles with the same purpose together. Original names and locations help resolve ambiguity.",
   "folder_growth_rule": "Create only needed folders, with at most two levels below the destination. Create a subfolder only when its purpose has at least three items and the parent contains other items; merge smaller groups into the parent. Put uncertain purposes temporarily in あとで整理 and review them regularly. Avoid stuffing folder classifications into bookmark names.",
-  "rules_new_jobs": "These rules apply to new analyses. Existing jobs and proposals retain their saved rules. Retrieval failures keep original names and dedicated failure folders."
+  "rules_new_jobs": "These rules apply to new analyses. Existing jobs and proposals retain their saved rules. Retrieval failures keep original names and dedicated failure folders.",
+  "codex_provider": "Codex (ChatGPT plan)",
+  "codex_model": "Model (fixed; low reasoning)",
+  "codex_help": "Content analysis uses gpt-6-luna with low reasoning through your ChatGPT plan. Bookmark URLs, names and retrieved page content are sent to OpenAI and consume your plan allowance. Embeddings use the separately selected provider.",
+  "codex_login_help": "Install Codex CLI and run codex login on the machine running this app, choosing ChatGPT sign-in. No API key is used. The model and reasoning are fixed; sampling and output token controls do not apply. Discover models checks login and the catalog; model access is confirmed only by successful analysis.",
+  "codex_missing": "Codex CLI could not start. Install Codex CLI and ensure codex is on the app server PATH.",
+  "codex_login_required": "Codex requires ChatGPT sign-in. Run codex login on the app server and choose ChatGPT, then retry. API-key login is not accepted.",
+  "codex_failed": "Codex could not complete analysis. Check CLI compatibility, connection and access to gpt-6-luna, then retry manually.",
+  "codex_limit": "Your ChatGPT/Codex usage limit was reached. Wait for the allowance to reset, then retry manually.",
+  "codex_timeout": "Codex exceeded the model response wait. Increase the limit or use 0 for unlimited, then retry manually."
 }

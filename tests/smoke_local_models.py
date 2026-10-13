@@ -1,4 +1,4 @@
-"""Actual local-model acceptance on two public-page fixtures and one 404 fixture."""
+"""Actual inference acceptance with bounded public-page fixtures."""
 
 import argparse
 import asyncio
@@ -15,7 +15,12 @@ from bookmark_organization.db import Store
 from bookmark_organization.jobs import create_job, job_state
 from bookmark_organization.llm import LocalAI
 from bookmark_organization.organizing import propose
-from bookmark_organization.schemas import InferenceSettings, JobRequest, Settings
+from bookmark_organization.schemas import (
+    Endpoint,
+    InferenceSettings,
+    JobRequest,
+    Settings,
+)
 
 FIXTURES = [
     (
@@ -37,8 +42,72 @@ FIXTURES = [
 ]
 
 
-async def verify(settings_path: Path):
+async def verify_codex(settings: Settings):
+    settings.generation = Endpoint(runtime="codex")
+    settings.api_timeout = 90
+    ai = LocalAI(settings)
+    calls = []
+    run = ai.codex.run
+
+    async def record(args, directory, **kwargs):
+        if args[0] == "exec":
+            calls.append({"args": args, "prompt": kwargs["prompt"]})
+        result = await run(args, directory, **kwargs)
+        if args[0] == "exec" and result[0] == 0:
+            events = [json.loads(line) for line in result[1].splitlines() if line]
+            item_types = {event.get("item", {}).get("type") for event in events}
+            assert all(
+                event.get("item", {}).get("type")
+                in {None, "reasoning", "agent_message", "error"}
+                for event in events
+            ), f"Codex analysis must not use tools: {item_types}"
+        return result
+
+    ai.codex.run = record
+    try:
+        await ai.ensure_available(settings.generation)
+        samples = []
+        for url, title, text in FIXTURES:
+            analysis = await ai.analyze(
+                {"url": url, "name": title},
+                {"title": title, "description": title, "text": text},
+            )
+            assert set(analysis) == {
+                "suggested_name",
+                "summary",
+                "purpose",
+                "candidate_categories",
+            }
+            samples.append({"url": url, "analysis": analysis})
+        assert 2 <= len(calls) <= 4
+        for call in calls:
+            assert not all(fixture[0] in call["prompt"] for fixture in FIXTURES)
+            assert call["args"][call["args"].index("--model") + 1] == "gpt-6-luna"
+            assert 'model_reasoning_effort="low"' in call["args"]
+            assert 'forced_login_method="chatgpt"' in call["args"]
+        print(
+            json.dumps(
+                {
+                    "result": "Codex analysis passed",
+                    "model": settings.generation.model,
+                    "reasoning": "low",
+                    "authentication": "ChatGPT",
+                    "independent_requests": len(calls),
+                    "samples": samples,
+                    "scope": "Actual Codex analysis only; embeddings and export are not exercised by --codex.",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    finally:
+        await ai.close()
+
+
+async def verify(settings_path: Path, codex: bool = False):
     settings = Settings.model_validate_json(settings_path.read_text())
+    if codex:
+        return await verify_codex(settings)
     metadata = json.loads(subprocess.check_output(["lms", "ls", "--json"], timeout=20))
     generation = next(m for m in metadata if m["modelKey"] == settings.generation.model)
     embedding = next(m for m in metadata if m["modelKey"] == settings.embedding.model)
@@ -167,5 +236,10 @@ async def verify(settings_path: Path):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--settings", type=Path, required=True)
+    parser.add_argument(
+        "--codex",
+        action="store_true",
+        help="Verify gpt-6-luna/low with ChatGPT login on two fixtures; no embedding or export calls",
+    )
     args = parser.parse_args()
-    asyncio.run(asyncio.wait_for(verify(args.settings), timeout=1190))
+    asyncio.run(asyncio.wait_for(verify(args.settings, args.codex), timeout=1190))

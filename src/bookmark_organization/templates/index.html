@@ -38,19 +38,22 @@
 <form id="settings-form">
 {% for key in ['generation','embedding'] %}
 <fieldset><legend>{{ t('generation_model' if key == 'generation' else 'embedding_model') }}</legend>
-<div class="form-grid"><label>{{ t('runtime') }}<select name="{{ key }}.runtime"><option value="lmstudio" {{ 'selected' if settings[key].runtime == 'lmstudio' }}>LM Studio</option><option value="ollama" {{ 'selected' if settings[key].runtime == 'ollama' }}>Ollama</option><option value="openrouter" {{ 'selected' if settings[key].runtime == 'openrouter' }}>OpenRouter</option></select></label>
-<label>{{ t('endpoint') }}<input name="{{ key }}.base_url" value="{{ settings[key].base_url }}" required></label>
-<label>{{ t('model_id') }}<input name="{{ key }}.model" value="{{ settings[key].model }}" autocomplete="off" spellcheck="false" required aria-describedby="{{ key }}-model-help"></label>
-<label>{{ t('model_candidates') }}<select id="{{ key }}-models"><option value="">{{ t('choose_model') }}</option><option value="{{ settings[key].model }}">{{ settings[key].model }}</option></select></label>
+<div class="form-grid"><label>{{ t('runtime') }}<select name="{{ key }}.runtime"><option value="lmstudio" {{ 'selected' if settings[key].runtime == 'lmstudio' }}>LM Studio</option><option value="ollama" {{ 'selected' if settings[key].runtime == 'ollama' }}>Ollama</option><option value="openrouter" {{ 'selected' if settings[key].runtime == 'openrouter' }}>OpenRouter</option>{% if key == 'generation' %}<option value="codex" {{ 'selected' if settings[key].runtime == 'codex' }}>{{ t('codex_provider') }}</option>{% endif %}</select></label>
+<label id="{{ key }}-endpoint-label">{{ t('endpoint') }}<input name="{{ key }}.base_url" value="{{ settings[key].base_url }}" required></label>
+<label><span id="{{ key }}-model-label">{{ t('model_id') }}</span><input name="{{ key }}.model" value="{{ settings[key].model }}" autocomplete="off" spellcheck="false" required aria-describedby="{{ key }}-model-help"></label>
+<label id="{{ key }}-candidates-label">{{ t('model_candidates') }}<select id="{{ key }}-models"><option value="">{{ t('choose_model') }}</option><option value="{{ settings[key].model }}">{{ settings[key].model }}</option></select></label>
 <p id="{{ key }}-model-help" class="muted full">{{ t('model_input_help') }}</p></div>
 </fieldset>
 {% endfor %}
+<fieldset id="codex-settings" hidden><legend>{{ t('codex_provider') }}</legend>
+<p>{{ t('codex_help') }}</p><p class="muted">{{ t('codex_login_help') }}</p>
+</fieldset>
 <fieldset id="openrouter-settings" hidden><legend>OpenRouter</legend>
 <p class="muted">{{ t('openrouter_help') }}</p>
 <div class="form-grid"><label class="full">{{ t('openrouter_api_key') }}<input id="openrouter-api-key" name="openrouter_api_key" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="openrouter-key-help" value=""></label></div>
 <p id="openrouter-key-help" class="muted">{{ t('openrouter_key_saved' if settings.openrouter_key_configured else 'openrouter_key_help') }}</p>
 </fieldset>
-<fieldset><legend>{{ t('inference_settings') }}</legend>
+<fieldset id="inference-settings"><legend>{{ t('inference_settings') }}</legend>
 <label>{{ t('inference_source') }}<select id="inference-source" name="inference.source">
 <option value="runtime" {{ 'selected' if settings.inference.source == 'runtime' }}>{{ t('runtime_defaults') }}</option>
 <option value="app" {{ 'selected' if settings.inference.source == 'app' }}>{{ t('app_defaults') }}</option>

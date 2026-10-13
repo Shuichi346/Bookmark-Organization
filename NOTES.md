@@ -2,6 +2,14 @@
 
 ## 2026-10-13
 
+### Codex subscription analysis
+
+`codex.py` ran the installed CLI with ChatGPT authentication only, fixed `gpt-6-luna`/`low`, an allowlisted environment without API keys, and an empty temporary working directory per request. It used isolated analysis instructions, ephemeral sessions, read-only execution and disabled command, browser, plugin, memory, hook and agent tools. Login was checked before discovery and each analysis, with `forced_login_method="chatgpt"` enforcing the execution path. Catalog presence was not an entitlement check. Embeddings retained their separate provider and immutable job snapshots. Response deadlines and worker cancellation terminated and reaped the CLI process group; raw subprocess diagnostics were not returned to the UI.
+
+With CLI 0.160.1 and the current subscription route, `--output-schema` repeatedly produced incomplete responses with `max_output_tokens`. The final path specified the schema in analysis instructions and used the existing Pydantic validation and one same-page repair. Replacing the built-in coding instructions also avoided unrelated coding context. Do not reintroduce constrained CLI output without actual-model evidence. CLI transport recovery is internal to Codex; the application adds no retry loop for authentication, connection or quota failures.
+
+Verified: 145 unit tests, Python static checks, frontend lint/typecheck/build, and the English/Japanese real-server Playwright workflow at 1440/390-pixel widths passed. The final `tests/smoke_local_models.py --codex` run completed two independent actual `gpt-6-luna`/`low` analyses with the four required fields and no tool actions. This flag used bounded public-page text fixtures and did not verify live retrieval, real embeddings or export. Synthetic coverage checked API-key rejection and environment isolation, schema validation, failure handling, process cancellation/timeouts, settings save/probe and snapshot preservation. The existing HTMX eval build warning remained; browser tests reported no unexpected console errors. Screenshots stayed outside the repository. Browser plugin was unavailable, so the existing Playwright workflow was used.
+
 ### Purpose-based naming and folder placement
 
 Cluster-majority labels and singleton demotion could override a page's intended use. `organizing.py` therefore used each validated purpose path for placement and retained semantic clusters only for related-item ordering. The supplied taxonomy remained an example, allowing other specific purposes. A subfolder required three items and other items in the same top category; the destination/`整理済み` wrapper did not count toward the two generated classification levels.

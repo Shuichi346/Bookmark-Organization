@@ -9,7 +9,7 @@
 
 # Bookmark Organization
 
-A local web application that organizes Chrome bookmarks with local AI models or OpenRouter’s OpenAI-compatible cloud API. Import an exported bookmark file, choose the folders to process, review suggested Japanese names and purpose-based folders, and download Chrome-compatible HTML.
+A local web application that organizes Chrome bookmarks with local AI models, OpenRouter, or Codex using your ChatGPT plan. Import an exported bookmark file, choose the folders to process, review suggested Japanese names and purpose-based folders, and download Chrome-compatible HTML.
 
 The application preserves the original imported file and keeps duplicate URLs as separate bookmarks. Failed page retrieval never deletes a bookmark. Before export, it checks bookmark identities, counts, URL multiplicities, and unchanged content outside your selection.
 
@@ -19,16 +19,17 @@ The application preserves the original imported file and keeps duplicate URLs as
 - Analyze pages independently, name them by purpose, and group them by the task you would open them for. Embeddings order related items within those folders.
 - Compare original and proposed names and locations, search or filter results, and save edits as new proposal versions.
 - Pause, resume, cancel, and manually retry failed items, with progress saved across server restarts.
-- Choose generation and embedding models independently through LM Studio, Ollama or OpenRouter.
+- Choose generation and embedding models independently through LM Studio, Ollama or OpenRouter, or use Codex for generation.
 - Switch between English and Japanese interfaces. Generated names remain Japanese.
 
-LM Studio and Ollama inference stays local. Choosing OpenRouter sends inputs to OpenRouter and its model providers and may incur usage charges. Retrieving bookmark content accesses the bookmarked websites. The application does not edit Chrome profiles directly or download models automatically.
+LM Studio and Ollama inference stays local. Choosing OpenRouter sends inputs to OpenRouter and its model providers and may incur usage charges. Choosing Codex sends analysis inputs to OpenAI and consumes your ChatGPT/Codex plan allowance. Retrieving bookmark content accesses the bookmarked websites. The application does not edit Chrome profiles directly or download models automatically.
 
 ## Requirements
 
 - Python **3.13** and **uv**.
 - Node.js **26.5 or later** and npm **12.0.1 or later** for building frontend assets.
 - A local **LM Studio** or **Ollama** API server with the selected models installed, or an **OpenRouter** account and API key. The two roles can use different providers.
+- For Codex content analysis: **Codex CLI**, available as `codex` on the server's PATH, signed in with **ChatGPT**. The integration was verified with CLI **0.160.1**; embeddings still require one of the other providers.
 
 The project was developed and verified on Apple silicon macOS. The inference runtime handles model execution; the application has no CUDA dependencies. Normal operation uses one Python server, plus any selected local inference runtime.
 
@@ -56,6 +57,7 @@ Open **Settings** in the application. Start the local API server when using LM S
 | LM Studio | `http://localhost:1234/v1` |
 | Ollama | `http://localhost:11434/v1` |
 | OpenRouter | `https://openrouter.ai/api/v1` (fixed) |
+| Codex (analysis only) | No endpoint; uses ChatGPT CLI sign-in |
 
 For content analysis and embeddings separately, choose the provider and endpoint, click **Discover models / test connection**, choose a suggestion or type the exact model ID, and **Save**. Typing filters the suggestions; discovery refreshes candidates without overwriting your input. Use the model ID returned by discovery, which may differ from its filename. Model installation and loading are handled in the runtime.
 
@@ -73,6 +75,8 @@ For OpenRouter, enter the API key in the password field before discovery or savi
 Keys entered in Settings are stored in `credentials.json` inside the data directory with owner-only permissions (0600). They are excluded from `settings.json`, job snapshots, API responses and rendered pages. A blank field retains the existing key; a replacement applies to new and resumed processing batches. `OPENROUTER_API_KEY` is a server-side fallback when no key has been saved. Never commit either source of credentials. Provider/model choices remain immutable for existing jobs. Only model-supported inference controls are sent to OpenRouter; its repetition penalty limit is 2, and some models require reasoning even when thinking is off. Authentication, credit and rate-limit errors are shown separately and require manual retry.
 
 Inference defaults to **Use web app settings**, with **thinking off**. This mode lets you control thinking, temperature, and sampling; unchecked sampling controls send neutral disabling values. **Use runtime settings** leaves thinking, temperature, and sampling overrides to the runtime's API defaults. Neither mode changes saved runtime preferences. New jobs snapshot application settings; existing jobs retain their selections, while runtime-owned defaults can change separately.
+
+For **Codex**, run `codex login` on the machine running the app and choose ChatGPT sign-in, then select **Codex (ChatGPT plan)** for content analysis and save. The model is fixed to `gpt-6-luna` with `model_reasoning_effort="low"`. API-key sign-in is rejected, and API-key environment variables are not passed to Codex. Discovery checks CLI login and the model catalog without inference; catalog presence does not establish actual model access. Analysis sends the selected URL, original name/folder path and bounded retrieved content to OpenAI. Each page uses a fresh ephemeral CLI session with isolated instructions and tools disabled. The app validates the returned JSON before saving it. Codex does not provide embeddings; keep that role independently configured. Sampling and the app's output-token limit do not apply to Codex; the model-response wait still applies. Cancelling or exceeding that wait terminates the local CLI process group. Plan-limit failures require manual retry. See the [Codex authentication](https://learn.chatgpt.com/docs/auth) and [non-interactive CLI](https://learn.chatgpt.com/docs/non-interactive-mode) documentation.
 
 **Model response wait** defaults to **0 = unlimited**. Set a positive number of seconds to limit waiting. Pause waits for an in-flight request to return. Cancel interrupts the application's request wait and ends the job, even with an unlimited wait. Advanced settings also expose retrieval limits, context and output budgets, and the clustering threshold.
 
@@ -149,6 +153,14 @@ The separate actual-model acceptance test is:
 uv run --locked python tests/smoke_local_models.py --settings data/settings.json
 ```
 
-It specifically requires LM Studio, its `lms` CLI, and the two GGUF models listed above with matching IDs in the settings file. Recorded real-model evidence covers LM Studio; Ollama's adapter is covered by fake-transport unit tests. OpenRouter request shapes, authentication failures, role discovery, mixed providers and credential isolation are covered with mock transports. Synthetic checks do not prove actual-model compatibility or authenticated OpenRouter inference.
+For a bounded actual Codex analysis check on two public-page text fixtures, using the fixed model and ChatGPT login:
+
+```sh
+uv run --locked python tests/smoke_local_models.py --settings data/settings.json --codex
+```
+
+This flag verifies Codex analysis only; it does not call embeddings, fetch live websites, export bookmarks, or change saved application settings.
+
+Without `--codex`, the harness requires LM Studio, its `lms` CLI, and the two GGUF models listed above with matching IDs in the settings file. Recorded real-model evidence covers LM Studio and Codex analysis. Ollama's adapter is covered by fake-transport unit tests. OpenRouter request shapes, authentication failures, role discovery, mixed providers and credential isolation are covered with mock transports. Synthetic checks do not prove actual-model compatibility or authenticated OpenRouter inference.
 
 See the [interface specification](docs/design/README.md) and [implementation plan and verification history](PLANS.md) for design details and recorded evidence.

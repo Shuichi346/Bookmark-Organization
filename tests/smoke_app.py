@@ -286,9 +286,101 @@ async def verify():
                                 )
                         await page.set_viewport_size({"width": 1440, "height": 900})
                         await page.unroute("**/api/settings/probe", model_catalog)
+
+                        # Codex is fixed subscription analysis, with local embeddings.
+                        async def codex_catalog(route):
+                            payload = route.request.post_data_json
+                            assert payload["generation"] == {
+                                "runtime": "codex",
+                                "base_url": "",
+                                "model": "gpt-6-luna",
+                            }
+                            assert payload["embedding"]["runtime"] == "lmstudio"
+                            assert payload["openrouter_api_key"] == ""
+                            await route.fulfill(
+                                json={
+                                    "generation": ["gpt-6-luna"],
+                                    "embedding": [initial["embedding"]["model"]],
+                                }
+                            )
+
+                        await page.route("**/api/settings/probe", codex_catalog)
+                        await page.locator(
+                            'select[name="generation.runtime"]'
+                        ).select_option("codex")
+                        await expect(page.locator("#codex-settings")).to_be_visible()
+                        await expect(page.locator("#codex-settings")).to_contain_text(
+                            "low"
+                        )
+                        await expect(
+                            page.locator("#openrouter-settings")
+                        ).to_be_hidden()
+                        await expect(
+                            page.locator('input[name="generation.model"]')
+                        ).to_have_value("gpt-6-luna")
+                        await expect(
+                            page.locator('input[name="generation.model"]')
+                        ).to_have_attribute("readonly", "")
+                        await expect(
+                            page.locator("#generation-endpoint-label")
+                        ).to_be_hidden()
+                        await expect(
+                            page.locator("#generation-candidates-label")
+                        ).to_be_hidden()
+                        await expect(page.locator("#inference-settings")).to_be_hidden()
+                        assert (
+                            await page.locator(
+                                'select[name="embedding.runtime"] option[value="codex"]'
+                            ).count()
+                            == 0
+                        )
+                        await page.locator("#probe").click()
+                        async with page.expect_response(
+                            lambda r: (
+                                r.url.endswith("/api/settings")
+                                and r.request.method == "PUT"
+                            )
+                        ) as saved:
+                            await page.locator("#settings-form button.primary").click()
+                        assert (await saved.value).status == 200
+                        await page.reload()
+                        await page.locator("#settings-toggle").click()
+                        await expect(
+                            page.locator('select[name="generation.runtime"]')
+                        ).to_have_value("codex")
+                        await expect(
+                            page.locator('input[name="generation.model"]')
+                        ).to_have_value("gpt-6-luna")
+                        stored = await (
+                            await context.request.get(base + "/api/settings")
+                        ).json()
+                        assert stored["inference"]["temperature"] == 0.35
+                        assert stored["embedding"]["model"] == "test/direct-embedding"
+                        for width in [1440, 390]:
+                            await page.set_viewport_size(
+                                {"width": width, "height": 900}
+                            )
+                            assert await page.evaluate(
+                                "document.documentElement.scrollWidth <= innerWidth"
+                            )
+                            if os.environ.get("BOOKMARK_QA_DIR"):
+                                image = (
+                                    Path(os.environ["BOOKMARK_QA_DIR"])
+                                    / f"codex-{lang}-{width}.png"
+                                )
+                                image.parent.mkdir(parents=True, exist_ok=True)
+                                await page.locator("#settings-panel").screenshot(
+                                    path=str(image)
+                                )
+                        await page.set_viewport_size({"width": 1440, "height": 900})
+                        await page.unroute("**/api/settings/probe", codex_catalog)
                         await page.locator(
                             'select[name="generation.runtime"]'
                         ).select_option("lmstudio")
+                        await expect(page.locator("#codex-settings")).to_be_hidden()
+                        await expect(
+                            page.locator("#inference-settings")
+                        ).to_be_visible()
                         await page.locator('input[name="generation.model"]').fill(
                             initial["generation"]["model"]
                         )

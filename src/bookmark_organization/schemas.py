@@ -1,11 +1,20 @@
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, SecretStr, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SecretStr,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from bookmark_organization.policy import FOLDER_PATHS, SOURCE_LABELS, VAGUE_LABELS
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+CODEX_MODEL = "gpt-6-luna"
+CODEX_REASONING = "low"
 
 
 class AppError(Exception):
@@ -15,20 +24,40 @@ class AppError(Exception):
 
 
 class Endpoint(BaseModel):
-    runtime: Literal["lmstudio", "ollama", "openrouter"] = "lmstudio"
+    runtime: Literal["lmstudio", "ollama", "openrouter", "codex"] = "lmstudio"
     base_url: str = Field(
         default_factory=lambda data: (
-            OPENROUTER_BASE_URL
+            ""
+            if data.get("runtime") == "codex"
+            else OPENROUTER_BASE_URL
             if data.get("runtime") == "openrouter"
             else "http://localhost:1234/v1"
         ),
         validate_default=True,
     )
-    model: str = "qwen3.5-9b-uncensored-hauhaucs-aggressive"
+    model: str = Field(
+        default_factory=lambda data: (
+            CODEX_MODEL
+            if data.get("runtime") == "codex"
+            else "qwen3.5-9b-uncensored-hauhaucs-aggressive"
+        ),
+        validate_default=True,
+    )
+
+    @field_validator("model")
+    @classmethod
+    def codex_model(cls, value: str, info: ValidationInfo) -> str:
+        if info.data.get("runtime") == "codex" and value != CODEX_MODEL:
+            raise ValueError("Codex requires gpt-6-luna")
+        return value
 
     @field_validator("base_url")
     @classmethod
     def allowed_endpoint(cls, value: str, info: ValidationInfo) -> str:
+        if info.data.get("runtime") == "codex":
+            if value:
+                raise ValueError("Codex uses CLI authentication, not an API endpoint")
+            return ""
         if info.data.get("runtime") == "openrouter":
             if value.rstrip("/") != OPENROUTER_BASE_URL:
                 raise ValueError("official OpenRouter HTTPS endpoint required")
@@ -77,6 +106,12 @@ class Settings(BaseModel):
     distance_threshold: float = Field(default=0.25, gt=0, lt=1)
     api_timeout: float = Field(default=0, ge=0, le=86400, allow_inf_nan=False)
     inference: InferenceSettings = Field(default_factory=InferenceSettings)
+
+    @model_validator(mode="after")
+    def embedding_provider(self):
+        if self.embedding.runtime == "codex":
+            raise ValueError("Codex supports content analysis only")
+        return self
 
 
 class SettingsUpdate(Settings):

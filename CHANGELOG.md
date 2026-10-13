@@ -16,6 +16,8 @@
 ### Added
 
 - Added an expandable English/Japanese explanation of naming and folder rules.
+- Added Codex as an opt-in content-analysis provider using ChatGPT CLI sign-in without API keys, fixed to `gpt-6-luna` with low reasoning and independently selected embeddings.
+- Added localized Codex login, CLI, response-wait and usage-limit errors, isolated per-page processing and CLI termination on cancellation or timeout.
 
 ## 2026-10-12
 

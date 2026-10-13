@@ -6,6 +6,7 @@ import numpy as np
 from pydantic import ValidationError
 
 from bookmark_organization.bookmarks import sha
+from bookmark_organization.codex import CodexCLI
 from bookmark_organization.policy import (
     LEGACY_PROMPT_VERSION,
     PROMPT_VERSION,
@@ -41,6 +42,7 @@ class LocalAI:
         self.api_key = api_key
         self.key_checked = False
         self.model_parameters: dict[str, list[str]] = {}
+        self.codex = CodexCLI(settings.api_timeout)
         self.client = client or httpx.AsyncClient(
             trust_env=False,
             follow_redirects=False,
@@ -80,6 +82,10 @@ class LocalAI:
         *,
         role: Literal["generation", "embedding"] = "generation",
     ) -> list[str]:
+        if endpoint.runtime == "codex":
+            if role != "generation":
+                raise AppError("model_unavailable", 503)
+            return await self.codex.models()
         try:
             if endpoint.runtime == "openrouter" and not self.key_checked:
                 response = await self.client.get(
@@ -187,6 +193,8 @@ class LocalAI:
             **self.analysis_schema().model_json_schema(),
             "additionalProperties": False,
         }
+        if endpoint.runtime == "codex":
+            return await self.codex.chat(messages, schema)
         app = self.settings.inference.source == "app"
         if endpoint.runtime == "ollama":
             url = endpoint.base_url.removesuffix("/v1") + "/api/chat"

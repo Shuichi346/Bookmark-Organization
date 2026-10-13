@@ -120,7 +120,7 @@ function formSettings():Settings {
  return result;
 }
 function updateInferenceControls() {
- query<HTMLFieldSetElement>("#inference-controls").disabled=query<HTMLSelectElement>("#inference-source").value!=="app";
+ query<HTMLFieldSetElement>("#inference-controls").disabled=query<HTMLSelectElement>('select[name="generation.runtime"]').value==="codex" || query<HTMLSelectElement>("#inference-source").value!=="app";
  for(const key of ["top_k","top_p","min_p","repeat_penalty","presence_penalty"]) {
   query<HTMLInputElement>('input[name="inference.'+key+'"]').disabled=!query<HTMLInputElement>('input[name="enable.'+key+'"]').checked;
  }
@@ -151,15 +151,29 @@ function updateProviders() {
  const openrouter=["generation","embedding"].some(key=>query<HTMLSelectElement>('select[name="'+key+'.runtime"]').value==="openrouter");
  query<HTMLElement>("#openrouter-settings").hidden=!openrouter;
  for(const key of ["generation","embedding"]) {
-  query<HTMLInputElement>('input[name="'+key+'.base_url"]').readOnly=query<HTMLSelectElement>('select[name="'+key+'.runtime"]').value==="openrouter";
+  const runtime=query<HTMLSelectElement>('select[name="'+key+'.runtime"]').value;
+  const codex=runtime==="codex";
+  const endpoint=query<HTMLInputElement>('input[name="'+key+'.base_url"]');
+  endpoint.readOnly=runtime==="openrouter" || codex;
+  endpoint.required=!codex;
+  query<HTMLElement>("#"+key+"-endpoint-label").hidden=codex;
+  query<HTMLElement>("#"+key+"-candidates-label").hidden=codex;
+  query<HTMLElement>("#"+key+"-model-help").hidden=codex;
+  query<HTMLInputElement>('input[name="'+key+'.model"]').readOnly=codex;
+  query<HTMLElement>("#"+key+"-model-label").textContent=t(codex?"codex_model":"model_id");
  }
+ const codex=query<HTMLSelectElement>('select[name="generation.runtime"]').value==="codex";
+ query<HTMLElement>("#codex-settings").hidden=!codex;
+ query<HTMLFieldSetElement>("#inference-settings").hidden=codex;
+ query<HTMLInputElement>('input[name="output_tokens"]').closest("label")!.hidden=codex;
+ updateInferenceControls();
 }
 document.querySelectorAll<HTMLSelectElement>('select[name$=".runtime"]').forEach(select=>select.addEventListener("change",()=>{
  const key=select.name.split(".")[0];
- const urls:Record<string,string>={lmstudio:"http://localhost:1234/v1",ollama:"http://localhost:11434/v1",openrouter:"https://openrouter.ai/api/v1"};
+ const urls:Record<string,string>={lmstudio:"http://localhost:1234/v1",ollama:"http://localhost:11434/v1",openrouter:"https://openrouter.ai/api/v1",codex:""};
  query<HTMLInputElement>('input[name="'+key+'.base_url"]').value=urls[select.value];
- query<HTMLInputElement>('input[name="'+key+'.model"]').value="";
- modelCandidates[key]=[];
+ query<HTMLInputElement>('input[name="'+key+'.model"]').value=select.value==="codex"?"gpt-6-luna":"";
+ modelCandidates[key]=select.value==="codex"?["gpt-6-luna"]:[];
  updateModelCandidates(key);
  query<HTMLElement>("#settings-feedback").textContent="";
  updateProviders();
