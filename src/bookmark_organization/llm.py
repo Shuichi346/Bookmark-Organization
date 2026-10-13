@@ -6,9 +6,19 @@ import numpy as np
 from pydantic import ValidationError
 
 from bookmark_organization.bookmarks import sha
-from bookmark_organization.schemas import Analysis, AppError, Endpoint, Settings
+from bookmark_organization.policy import (
+    LEGACY_PROMPT_VERSION,
+    PROMPT_VERSION,
+    PURPOSE_RULES,
+)
+from bookmark_organization.schemas import (
+    Analysis,
+    AppError,
+    Endpoint,
+    PurposeAnalysis,
+    Settings,
+)
 
-PROMPT_VERSION = "bookmark-ja-v1"
 EMBEDDING_PREFIX = "task: clustering | query: "
 SYSTEM = (
     "You analyze exactly one bookmarked page. Return only a JSON object conforming "
@@ -27,6 +37,7 @@ class LocalAI:
         api_key: str = "",
     ):
         self.settings = settings
+        self.prompt_version = PROMPT_VERSION
         self.api_key = api_key
         self.key_checked = False
         self.model_parameters: dict[str, list[str]] = {}
@@ -163,9 +174,19 @@ class LocalAI:
             ),
         }
 
+    def analysis_schema(self) -> type[Analysis]:
+        return (
+            Analysis
+            if self.prompt_version == LEGACY_PROMPT_VERSION
+            else PurposeAnalysis
+        )
+
     async def chat(self, messages: list[dict]) -> tuple[str, str]:
         endpoint = self.settings.generation
-        schema = {**Analysis.model_json_schema(), "additionalProperties": False}
+        schema = {
+            **self.analysis_schema().model_json_schema(),
+            "additionalProperties": False,
+        }
         app = self.settings.inference.source == "app"
         if endpoint.runtime == "ollama":
             url = endpoint.base_url.removesuffix("/v1") + "/api/chat"
@@ -247,14 +268,21 @@ class LocalAI:
             "description": page["description"],
             "text": page["text"][: self.settings.context_chars],
         }
+        if self.prompt_version != LEGACY_PROMPT_VERSION:
+            data["original_folder_path"] = bookmark.get("original_folder_path", "")
+        schema = self.analysis_schema()
         # Fresh messages for each URL, including its own bounded repair if needed.
         user = json.dumps(
-            {"schema": Analysis.model_json_schema(), "untrusted_page_data": data},
+            {"schema": schema.model_json_schema(), "untrusted_page_data": data},
             ensure_ascii=False,
         )
         for attempt in range(2):
             messages = [
-                {"role": "system", "content": SYSTEM},
+                {
+                    "role": "system",
+                    "content": SYSTEM
+                    + ("\n" + PURPOSE_RULES if schema is PurposeAnalysis else ""),
+                },
                 {
                     "role": "user",
                     "content": user
@@ -270,7 +298,7 @@ class LocalAI:
                 content, finish = await self.chat(messages)
                 if finish == "length":
                     raise ValueError("truncated")
-                analysis = Analysis.model_validate_json(content)
+                analysis = schema.model_validate_json(content)
                 return analysis.model_dump()
             except httpx.HTTPError as exc:
                 raise self.connection_error(exc, self.settings.generation) from exc
@@ -318,6 +346,6 @@ class LocalAI:
             "model": endpoint.model,
             "dimensions": len(vector),
             "content_hash": sha(content.encode()),
-            "prompt_version": PROMPT_VERSION,
+            "prompt_version": self.prompt_version,
             "vector": vector.tolist(),
         }

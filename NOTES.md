@@ -1,5 +1,15 @@
 # Notes
 
+## 2026-10-13
+
+### Purpose-based naming and folder placement
+
+Cluster-majority labels and singleton demotion could override a page's intended use. `organizing.py` therefore used each validated purpose path for placement and retained semantic clusters only for related-item ordering. The supplied taxonomy remained an example, allowing other specific purposes. A subfolder required three items and other items in the same top category; the destination/`整理済み` wrapper did not count toward the two generated classification levels.
+
+`policy.py` separated `bookmark-ja-purpose-v2` from `bookmark-ja-v1`. The worker used the saved version for both analysis and embeddings, defaulting missing versions to legacy to avoid mixing cached and resumed results. The bookmark's own original folder path remained untrusted intent context. `PurposeAnalysis` enforced name/path structure, and proposal generation revalidated saved outputs. Manual edits remained flexible. Regression coverage in `tests/test_llm.py`, `tests/test_jobs.py` and `tests/test_organizing.py` protected policy isolation, sparse-folder handling and export preservation.
+
+Verified: 131 unit tests, Python static checks and the English/Japanese Playwright workflow at desktop/mobile widths passed. Actual selected OpenRouter models passed analysis, embeddings and export on two synthetic documents. Local-model inference and live retrieval were not reverified. Detailed model IDs, samples and acceptance evidence remain in the 2026-10-13 purpose-policy amendment in `PLANS.md`.
+
 ## 2026-10-12
 
 ### Job cancellation

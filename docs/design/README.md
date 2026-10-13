@@ -12,6 +12,10 @@ Desktop (1440×900): header 72px, sidebar 280px, main flexible; local scroll for
 
 Automated verification asserts document language, catalog/client consistency, palette/type tokens, viewport overflow, focusable controls and workflow. Per PLANS.md, no AI-driven browser interaction or screenshot fidelity grading is performed.
 
+## Naming and folder guidance
+
+The workflow includes a native expandable guide in both locales. It explains purpose-first Japanese names, page-specific document/article naming, optional GitHub type/technology suffixes, task-based browsing folders, the three-item minimum for useful subfolders and the two-level limit below the organization destination. It states that new analyses use these rules while saved jobs/proposals retain their original policy. Generated purpose categories remain Japanese in both interface languages. The advanced similarity threshold is labeled as related-item ordering for new jobs and classification for legacy jobs.
+
 ## Image Gen prompt
 
 Built-in tool, ui-mockup, saved as concept.png:

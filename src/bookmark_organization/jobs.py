@@ -8,6 +8,7 @@ from bookmark_organization.db import Store
 from bookmark_organization.fetching import Fetcher, RequestPacer
 from bookmark_organization.llm import PROMPT_VERSION, LocalAI
 from bookmark_organization.organizing import scope
+from bookmark_organization.policy import LEGACY_PROMPT_VERSION
 from bookmark_organization.schemas import AppError, JobRequest, Settings
 
 TERMINAL = {"complete", "retrieval_failed", "analysis_failed"}
@@ -144,6 +145,7 @@ class Worker:
         settings = Settings.model_validate(snapshot["settings"])
         fetcher = self.fetch_factory(settings)
         ai = self.ai_factory(settings)
+        ai.prompt_version = snapshot.get("prompt_version", LEGACY_PROMPT_VERSION)
         tree = {n["id"]: n for n in self.store.tree(job["project"])}
         try:
             # Validate each selected provider/model once for this processing batch.
@@ -182,7 +184,16 @@ class Worker:
                     try:
                         if not item["analysis"]:
                             self.store.save_item(identifier, bid, "analyzing")
-                            item["analysis"] = await ai.analyze(tree[bid], page)
+                            bookmark = dict(tree[bid])
+                            path = []
+                            parent = bookmark["parent"]
+                            while parent != "root":
+                                path.append(tree[parent]["name"])
+                                parent = tree[parent]["parent"]
+                            bookmark["original_folder_path"] = " / ".join(
+                                reversed(path)
+                            )
+                            item["analysis"] = await ai.analyze(bookmark, page)
                             self.store.save_item(
                                 identifier, bid, "pending", analysis=item["analysis"]
                             )

@@ -72,6 +72,10 @@
 </section>
 <section id="workflow">
 <h1>{{ t('heading') }}</h1><p class="intro">{{ t('intro') }}</p>
+<details id="organization-rules"><summary>{{ t('organization_rules') }}</summary>
+<p>{{ t('naming_rule') }}</p><p>{{ t('page_naming_rule') }}</p><p>{{ t('github_naming_rule') }}</p>
+<p>{{ t('folder_rule') }}</p><p>{{ t('folder_growth_rule') }}</p><p class="muted">{{ t('rules_new_jobs') }}</p>
+</details>
 {% if not project %}
 <div class="empty-state"><p>{{ t('empty') }}</p><button id="choose-file" class="primary">{{ t('import') }}</button></div>
 {% else %}

@@ -2,6 +2,7 @@ import asyncio
 
 from bookmark_organization.app import create_app
 from bookmark_organization.jobs import Worker
+from bookmark_organization.policy import LEGACY_PROMPT_VERSION, PROMPT_VERSION
 
 HTML = b"""<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>
 <DT><H3 ADD_DATE="12">A</H3><DL><p>
@@ -19,6 +20,11 @@ ANALYSIS = {
     "type": "documentation",
     "candidate_categories": ["開発"],
     "tags": ["docs"],
+}
+PURPOSE_ANALYSIS = {
+    **ANALYSIS,
+    "suggested_name": "開発機能を調べる｜Example Docs",
+    "candidate_categories": ["開発・プログラミング/ドキュメント・技術資料"],
 }
 PAGE = {
     "status": "ok",
@@ -52,6 +58,7 @@ class FakeAI:
 
     def __init__(self, settings):
         self.settings = settings
+        self.prompt_version = PROMPT_VERSION
 
     async def ensure_available(self, endpoint, *, role="generation"):
         pass
@@ -59,7 +66,11 @@ class FakeAI:
     async def analyze(self, bookmark, page):
         self.calls.append(bookmark["id"])
         await asyncio.sleep(0.08)
-        return dict(ANALYSIS)
+        return dict(
+            ANALYSIS
+            if self.prompt_version == LEGACY_PROMPT_VERSION
+            else PURPOSE_ANALYSIS
+        )
 
     async def embed(self, page, analysis):
         await asyncio.sleep(0.08)
@@ -67,7 +78,7 @@ class FakeAI:
             "model": self.settings.embedding.model,
             "dimensions": 3,
             "content_hash": "synthetic",
-            "prompt_version": "test",
+            "prompt_version": self.prompt_version,
             "vector": [1.0, 0.0, 0.0],
         }
 

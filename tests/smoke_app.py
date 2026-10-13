@@ -95,6 +95,26 @@ async def verify():
                             "lang", lang
                         )
                         await expect(page.locator("#language")).to_have_value("auto")
+                        rules = page.locator("#organization-rules")
+                        await rules.locator("summary").click()
+                        await expect(rules.locator("p").first).to_be_visible()
+                        await expect(rules).to_contain_text("HTTPX［Python］")
+                        for width, height in [(1440, 900), (390, 844)]:
+                            await page.set_viewport_size(
+                                {"width": width, "height": height}
+                            )
+                            assert await page.evaluate(
+                                "document.documentElement.scrollWidth <= innerWidth"
+                            )
+                            if os.environ.get("BOOKMARK_QA_SCREENSHOTS"):
+                                screenshot = (
+                                    Path(os.environ["BOOKMARK_QA_SCREENSHOTS"])
+                                    / f"rules-{lang}-{width}.png"
+                                )
+                                screenshot.parent.mkdir(parents=True, exist_ok=True)
+                                await page.screenshot(path=str(screenshot))
+                        await rules.locator("summary").click()
+                        await page.set_viewport_size({"width": 1440, "height": 900})
                         # Exercise both inference sources and persist all controls.
                         await page.locator("#settings-toggle").click()
                         initial = await (
@@ -402,6 +422,13 @@ async def verify():
                         await page.locator('[data-action="proposal"]').click()
                         await page.wait_for_url("**&proposal=*")
                         await page.locator(".edit-name").first.wait_for()
+                        names = await page.locator(".edit-name").evaluate_all(
+                            "elements=>elements.map(e=>e.value)"
+                        )
+                        assert sum("｜" in name for name in names) == 3
+                        await expect(
+                            page.locator(".edit-parent").first
+                        ).to_contain_text("開発・プログラミング")
                         await page.locator(".edit-name").first.fill(
                             "Edited 日本語 name"
                         )

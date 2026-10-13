@@ -69,7 +69,7 @@
   "retrieval_concurrency": "Concurrent retrievals",
   "context_chars": "Input character budget",
   "output_tokens": "Output token limit",
-  "distance_threshold": "Clustering distance threshold",
+  "distance_threshold": "Similarity threshold for related-item ordering (also classification in older jobs)",
   "api_timeout": "Model response wait (seconds; 0 = unlimited)",
   "rendering": "Enable isolated JavaScript page retrieval (requires Chromium)",
   "saved": "Saved",
@@ -129,5 +129,12 @@
   "model_input_help": "Type the exact model ID or pick a suggestion. Typing filters the dropdown; discovery preserves your input.",
   "model_id": "Model ID",
   "model_candidates": "Model suggestions",
-  "choose_model": "Choose a model"
+  "choose_model": "Choose a model",
+  "organization_rules": "Naming and folder rules",
+  "naming_rule": "Names support search: use a specific purpose first, followed by ｜ and the site, tool or resource name. Japanese examples: 文章を翻訳｜DeepL and 画像の背景を削除｜remove.bg. Preserve proper names and avoid vague labels such as useful, recommended or other.",
+  "page_naming_rule": "Distinguish whole sites from individual pages. Use Pythonの仕様を調べる｜Python Docs for a documentation home page and 正規表現の書き方を確認｜Python re for a specific feature. Name articles by topic, Q&A by the problem and solution, and product pages by the product and evaluation purpose.",
+  "github_naming_rule": "For GitHub, use purpose｜repository［type or technology when needed］. Examples: 動画をダウンロード｜yt-dlp［CLI］ and HTTP通信を実装｜HTTPX［Python］. Distinguish apps, libraries, examples and curated lists by their use; add a suffix only when it helps identify them.",
+  "folder_rule": "Folders support browsing: classify by the task for which you would open the page. Suggested areas are AI and machine learning, images and video, development, files and documents, research and learning, macOS and system, and everyday life and shopping. Keep official sites, GitHub repositories and articles with the same purpose together. Original names and locations help resolve ambiguity.",
+  "folder_growth_rule": "Create only needed folders, with at most two levels below the destination. Create a subfolder only when its purpose has at least three items and the parent contains other items; merge smaller groups into the parent. Put uncertain purposes temporarily in あとで整理 and review them regularly. Avoid stuffing folder classifications into bookmark names.",
+  "rules_new_jobs": "These rules apply to new analyses. Existing jobs and proposals retain their saved rules. Retrieval failures keep original names and dedicated failure folders."
 }

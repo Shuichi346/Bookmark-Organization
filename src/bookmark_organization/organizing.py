@@ -2,11 +2,13 @@ import copy
 from collections import Counter
 
 import numpy as np
+from pydantic import ValidationError
 from sklearn.cluster import AgglomerativeClustering
 
 from bookmark_organization.bookmarks import uid
 from bookmark_organization.integrity import validate
-from bookmark_organization.schemas import AppError, JobRequest
+from bookmark_organization.policy import MIN_SUBFOLDER_ITEMS, PROMPT_VERSION
+from bookmark_organization.schemas import AppError, JobRequest, PurposeAnalysis
 
 FAILURE_FOLDERS = {
     "not_found": "404",
@@ -135,17 +137,45 @@ def propose(
     groups: dict[int, list[dict]] = {}
     for item, label in zip(good, labels):
         groups.setdefault(label, []).append(item)
+    purpose_based = snapshot.get("prompt_version") == PROMPT_VERSION
+    paths: dict[str, list[str]] = {}
+    names: dict[str, str] = {}
+    if purpose_based:
+        for item in good:
+            try:
+                analysis = PurposeAnalysis.model_validate(item["analysis"])
+            except ValidationError as exc:
+                raise AppError("analysis_invalid") from exc
+            paths[item["bookmark"]] = analysis.candidate_categories[0].split("/")
+            names[item["bookmark"]] = analysis.suggested_name
+        path_counts = Counter(tuple(path) for path in paths.values())
+        top_counts = Counter(path[0] for path in paths.values())
+
     for members in groups.values():
         category_counts = Counter(
             c for i in members for c in i["analysis"]["candidate_categories"]
         )
         category = category_counts.most_common(1)[0][0] if category_counts else "要確認"
-        if len(good) > 1 and len(members) == 1:
+        if not purpose_based and len(good) > 1 and len(members) == 1:
             category = "要確認"
-        parent = folder(category, destination)
+        parent = None if purpose_based else folder(category, destination)
         for item in members:
+            if purpose_based:
+                path = paths[item["bookmark"]]
+                parent = folder(path[0], destination)
+                # Only split a populated subtype when it distinguishes siblings.
+                if (
+                    len(path) == 2
+                    and path_counts[tuple(path)] >= MIN_SUBFOLDER_ITEMS
+                    and top_counts[path[0]] > path_counts[tuple(path)]
+                ):
+                    parent = folder(path[1], parent)
             n = by_id[item["bookmark"]]
-            n["name"] = item["analysis"]["suggested_name"]
+            n["name"] = (
+                names[item["bookmark"]]
+                if purpose_based
+                else item["analysis"]["suggested_name"]
+            )
             n["parent"] = parent
             n["order"] = counter
             counter += 1

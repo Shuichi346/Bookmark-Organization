@@ -1,7 +1,9 @@
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, SecretStr, ValidationInfo, field_validator
+
+from bookmark_organization.policy import FOLDER_PATHS, SOURCE_LABELS, VAGUE_LABELS
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -106,6 +108,53 @@ class Analysis(BaseModel):
     def bounded_labels(cls, values: list[str]) -> list[str]:
         if any(not v.strip() or len(v) > 100 for v in values):
             raise ValueError("invalid label")
+        return values
+
+
+class PurposeAnalysis(Analysis):
+    suggested_name: str = Field(
+        min_length=3,
+        max_length=200,
+        pattern=r"^[^｜\r\n]+｜[^｜\r\n]+$",
+        description="具体的な用途｜サイト・ツール・資料名［必要な種類・技術］",
+    )
+    candidate_categories: list[
+        Annotated[
+            str,
+            Field(
+                max_length=100,
+                pattern=r"^[^/\\\r\n]{1,100}(/[^/\\\r\n]{1,100})?$",
+                examples=FOLDER_PATHS,
+            ),
+        ]
+    ] = Field(
+        min_length=1,
+        max_length=1,
+        description="探す作業に最も合う用途パスを1つ選ぶ",
+    )
+
+    @field_validator("suggested_name")
+    @classmethod
+    def purpose_name(cls, value: str) -> str:
+        purpose, name = (part.strip() for part in value.split("｜"))
+        if not purpose or not name or purpose in VAGUE_LABELS:
+            raise ValueError("specific purpose and proper name required")
+        return f"{purpose}｜{name}"
+
+    @field_validator("candidate_categories")
+    @classmethod
+    def purpose_path(cls, values: list[str]) -> list[str]:
+        for value in values:
+            parts = value.split("/")
+            if not 1 <= len(parts) <= 2 or any(
+                not part.strip()
+                or part != part.strip()
+                or part in VAGUE_LABELS | SOURCE_LABELS | {".", ".."}
+                or "\\" in part
+                or any(ord(char) < 32 for char in part)
+                for part in parts
+            ):
+                raise ValueError("one or two specific purpose folders required")
         return values
 
 

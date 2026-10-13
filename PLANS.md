@@ -1,5 +1,7 @@
 # Bookmark Organization — Requirements and Implementation Plan
 
+Current-scope amendment (2026-10-13): new jobs use purpose-first Japanese names and task-based folders, superseding free-form semantic category placement for those jobs. Existing snapshots retain their original policy. See the completed purpose-policy amendment below.
+
 Current-scope amendment (2026-10-12): the user explicitly added OpenRouter via its OpenAI-compatible API. The local-only requirement below remains historical for the original implementation and continues to apply to LM Studio/Ollama. OpenRouter is an opt-in exception using only its official HTTPS endpoint; local inference never falls back to it automatically. Details and current verification are recorded in the amendment at the end of this document.
 
 ## Progress Status
@@ -165,6 +167,10 @@ Enable export only after integrity checks pass. For LLM connection failures, inc
 
 Bind the server to 127.0.0.1, restrict allowed Host/Origin values, protect mutation forms against CSRF, and consistently escape HTML and attributes. Do not log credentials embedded in URLs. Never insert raw page content or original HTML into the interface as executable HTML.
 
+## Documentation Maintenance
+
+Follow the current `update-repo-docs` skill and the Documentation updates section in `AGENTS.md`. Use `CHANGELOG.md` for dated behavior changes, `NOTES.md` for concise rationale and evidence limits, and `AGENTS.md` for durable project contracts. Keep this plan focused on design, acceptance conditions and progress; reference maintenance notes instead of duplicating handoff narratives. Preserve historical verification records, reuse established evidence and review documentation-only changes without rerunning implementation tests.
+
 ## Implementation Sequence
 
 | ID | Outcome and proposed location | Required action | Dependencies | Acceptance evidence |
@@ -300,3 +306,12 @@ The user added direct model-ID entry as an alternative to dropdown selection. Bo
 Added terminal cancellation for running/paused jobs and the requested Japanese conflict message, with matching English controls and guidance. Cancellation interrupted the active batch task while retaining original imports, immutable settings and saved results, and allowed a new job in the same project. Cancelled jobs remained terminal across restart and could not resume, retry or create proposals. The worker continued serving subsequent jobs.
 
 Verification passed: 93 unit tests, ruff/format/ty, frontend lint/typecheck/build and the real-server browser smoke workflow. Synthetic blocked clients covered availability/retrieval/analysis/embedding cancellation and cleanup. English/Japanese UI checks covered running/paused cancellation, reload, new-job creation and no overflow at 1440/390 pixels, with no unexpected console errors. Playwright screenshots were inspected outside the repository because Browser plugin was unavailable. The initial new browser assertions failed on an ambiguous heading and an expected validation error log; corrected assertions passed. The production server was restarted at `127.0.0.1:8765`. Actual model-provider cancellation was not tested, and disconnecting application requests does not guarantee provider-side work stops. Existing user jobs were not explicitly cancelled, and no model settings or credentials were changed.
+
+
+### Purpose-based naming and folders — 2026-10-13
+
+Implemented `bookmark-ja-purpose-v2` for new jobs: concrete purpose｜proper name, page-kind rules and optional GitHub type/language suffixes, whole-site versus specific-page naming, and a single task-based folder path per item. The original folder path was passed as untrusted intent context. The supplied taxonomy remained an example rather than an exhaustive whitelist. Folder placement no longer followed cluster majorities or demoted singletons; semantic clusters ordered related items within purpose folders. Only populated, distinguishing subtypes with at least three items gained subfolders, capped at two generated levels below the destination. Saved jobs, including snapshots without a version, retained their legacy schema, prompt and embedding version on resume/retry. Original data, failures, duplicate URL multiplicities and the export integrity gate were preserved. The workflow gained localized expandable guidance.
+
+Verification passed: ruff check/format, ty, all 131 unit tests and the real-server Playwright workflow in English/Japanese at 1440×900 and 390×844. Rule-guide interaction, purpose suggestions/locations, edits/export, cancellation, locale persistence, assets and no overflow or unexpected browser errors passed. External screenshots confirmed readability. Browser plugin was unavailable, so the existing Playwright workflow was used. Unchanged frontend sources/dependencies/assets did not require a rebuild. A subagent independently reviewed policy preservation and added organizing regression cases.
+
+The existing LM Studio-only harness stopped before inference because the current selections were OpenRouter. Actual selected-model verification instead used two synthetic fixtures with `nvidia/nemotron-3-super-120b-a12b:free` and `nvidia/nemotron-3-embed-1b:free`. It yielded `動画をダウンロード｜yt-dlp［CLI］` under `画像・動画/動画編集・変換` and `正規表現の書き方を確認｜Python re` under `開発・プログラミング/ドキュメント・技術資料`, normalized 2048-dimensional embeddings and an integrity-checked export preserving a synthetic 404. Real-model evidence covered those two OpenRouter fixtures, not a new local-model test or live page retrieval. The updated application was started at `127.0.0.1:8765`; settings, keys and saved user results were not changed.

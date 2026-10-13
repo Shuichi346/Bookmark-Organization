@@ -9,14 +9,14 @@
 
 # Bookmark Organization
 
-A local web application that organizes Chrome bookmarks with local AI models or OpenRouter’s OpenAI-compatible cloud API. Import an exported bookmark file, choose the folders to process, review suggested Japanese names and semantic groupings, and download Chrome-compatible HTML.
+A local web application that organizes Chrome bookmarks with local AI models or OpenRouter’s OpenAI-compatible cloud API. Import an exported bookmark file, choose the folders to process, review suggested Japanese names and purpose-based folders, and download Chrome-compatible HTML.
 
 The application preserves the original imported file and keeps duplicate URLs as separate bookmarks. Failed page retrieval never deletes a bookmark. Before export, it checks bookmark identities, counts, URL multiplicities, and unchanged content outside your selection.
 
 ## What you can do
 
 - Organize all bookmarks, one folder, or several folders together.
-- Analyze pages independently and group related bookmarks using embeddings.
+- Analyze pages independently, name them by purpose, and group them by the task you would open them for. Embeddings order related items within those folders.
 - Compare original and proposed names and locations, search or filter results, and save edits as new proposal versions.
 - Pause, resume, cancel, and manually retry failed items, with progress saved across server restarts.
 - Choose generation and embedding models independently through LM Studio, Ollama or OpenRouter.
@@ -68,7 +68,7 @@ The initial selections are:
 
 You can select other models that support the required structured analysis or embedding role. Ollama names may differ from these defaults. LM Studio and Ollama endpoints must be loopback, and their cloud-backed entries are excluded. OpenRouter is an explicit selection with its official HTTPS endpoint; local failures never switch to cloud AI automatically. See the [LM Studio API documentation](https://lmstudio.ai/docs/developer/openai-compat) and [Ollama compatibility documentation](https://docs.ollama.com/api/openai-compatibility).
 
-For OpenRouter, enter the API key in the password field before discovery or saving, then choose a suggestion or enter the exact model ID and save. Discovery checks the key and lists text models supporting structured outputs for analysis, or text embedding models for embeddings; it does not run inference. You can combine OpenRouter analysis with local embeddings, or use OpenRouter for both. Analysis sends the selected bookmark URL, original name, title, description and bounded page text; cloud embeddings send the page title and analysis text. Model/provider charges and data handling depend on your OpenRouter account and selection. See the [OpenRouter quickstart](https://openrouter.ai/docs/quickstart) and [embeddings documentation](https://openrouter.ai/docs/api_reference/embeddings).
+For OpenRouter, enter the API key in the password field before discovery or saving, then choose a suggestion or enter the exact model ID and save. Discovery checks the key and lists text models supporting structured outputs for analysis, or text embedding models for embeddings; it does not run inference. You can combine OpenRouter analysis with local embeddings, or use OpenRouter for both. Analysis sends the selected bookmark URL, original name and folder path, title, description and bounded page text; cloud embeddings send the page title and analysis text. Model/provider charges and data handling depend on your OpenRouter account and selection. See the [OpenRouter quickstart](https://openrouter.ai/docs/quickstart) and [embeddings documentation](https://openrouter.ai/docs/api_reference/embeddings).
 
 Keys entered in Settings are stored in `credentials.json` inside the data directory with owner-only permissions (0600). They are excluded from `settings.json`, job snapshots, API responses and rendered pages. A blank field retains the existing key; a replacement applies to new and resumed processing batches. `OPENROUTER_API_KEY` is a server-side fallback when no key has been saved. Never commit either source of credentials. Provider/model choices remain immutable for existing jobs. Only model-supported inference controls are sent to OpenRouter; its repetition penalty limit is 2, and some models require reasoning even when thinking is off. Authentication, credit and rate-limit errors are shown separately and require manual retry.
 
@@ -86,7 +86,15 @@ Inference defaults to **Use web app settings**, with **thinking off**. This mode
 5. Create a proposal, compare names and locations, edit names or allowed destination folders, and save. Each save creates a new version while the original import remains unchanged.
 6. Export after integrity validation passes. You can also download the original imported file. Review exports in a separate Chrome profile: Chrome imports add bookmarks to the existing collection.
 
-Start with a small file and check the suggestions before importing the result into Chrome. Category quality depends on page content and the selected model; isolated outliers are placed in `要確認`. Selections exceeding the estimated 128 MiB clustering distance-memory budget must be processed in smaller folder groups.
+Start with a small file and check the suggestions before importing the result into Chrome. Category quality depends on page content and the selected model. Confidently classified single bookmarks retain their purpose folder; uncertain purposes use `あとで整理`, while permitted analysis failures use `要確認`. Selections exceeding the estimated 128 MiB clustering distance-memory budget must be processed in smaller folder groups.
+
+### Naming and folder rules
+
+New analyses use Japanese names in the form `specific purpose｜site, tool or resource name`. Service names follow the task, such as `文章を翻訳｜DeepL`. GitHub entries distinguish apps, CLI tools, libraries, samples and curated lists, adding a type or language only when useful: `動画をダウンロード｜yt-dlp［CLI］`. Individual documents and articles describe their specific content, for example `正規表現の書き方を確認｜Python re`, rather than naming the whole site.
+
+Folders reflect the task for which you would look for the bookmark, bringing official sites, repositories and articles together. Suggested areas include AI, images and video, development, files and documents, research, macOS and everyday life; other specific purposes are allowed. Original names and folder paths help infer intent when several uses fit. The selected destination (or the `整理済み` wrapper) contains at most two newly generated folder levels. A subtype gets a folder only when it has at least three bookmarks and its parent also contains other purposes; smaller or redundant subtypes stay in the parent. No unused categories are created. Review the temporary `あとで整理` folder regularly. Names should not repeat the entire folder hierarchy.
+
+The page includes an expandable guide. Existing jobs, including resumed and retried jobs, retain their snapshotted naming and grouping version; create a new analysis to apply these rules. Manual proposal edits remain available.
 
 ### Optional page rendering
 

@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -7,8 +8,57 @@ from helpers import HTML, FakeAI, FakeFetcher, make_worker
 from bookmark_organization.app import create_app
 from bookmark_organization.db import Store
 from bookmark_organization.jobs import Worker, control, create_job, job_state
+from bookmark_organization.policy import LEGACY_PROMPT_VERSION, PROMPT_VERSION
 from bookmark_organization.proposals import create_proposal
 from bookmark_organization.schemas import AppError, JobRequest
+
+
+@pytest.mark.parametrize("version", [None, LEGACY_PROMPT_VERSION, PROMPT_VERSION])
+async def test_worker_resumes_snapshotted_policy_and_passes_own_folder_hint(
+    tmp_path, version
+):
+    store = Store(tmp_path)
+    project = store.import_html(HTML, "test.html")
+    job = create_job(store, project, JobRequest(all=True, token="policy-snapshot"))
+    snapshot = job_state(store, job)["snapshot"]
+    assert snapshot["prompt_version"] == PROMPT_VERSION
+    if version is None:
+        snapshot.pop("prompt_version")
+    else:
+        snapshot["prompt_version"] = version
+    with store.connect() as db:
+        db.execute("UPDATE jobs SET snapshot=? WHERE id=?", (json.dumps(snapshot), job))
+    selected_version = version or LEGACY_PROMPT_VERSION
+    bookmark = next(n for n in store.tree(project) if n["name"] == "Beta")
+    cached = FakeAI(store.settings())
+    cached.prompt_version = selected_version
+    page = await FakeFetcher(store.settings()).fetch(bookmark["url"])
+    analysis = await cached.analyze(bookmark, page)
+    store.save_item(job, bookmark["id"], "pending", retrieval=page, analysis=analysis)
+    observed = []
+
+    class RecordingAI(FakeAI):
+        async def analyze(self, bookmark, page):
+            observed.append((self.prompt_version, bookmark["original_folder_path"]))
+            return await super().analyze(bookmark, page)
+
+    worker = Worker(store, FakeFetcher, RecordingAI)
+    await worker.process(store.one("SELECT * FROM jobs WHERE id=?", (job,)))
+    assert job_state(store, job)["snapshot"] == snapshot
+    assert observed
+    assert all(v == selected_version for v, _ in observed)
+    assert (selected_version, "A") in observed
+    assert (selected_version, "B") in observed
+    completed = [i for i in store.items(job) if i["state"] == "complete"]
+    assert {i["embedding"]["prompt_version"] for i in completed} == {selected_version}
+    assert (
+        next(i for i in completed if i["bookmark"] == bookmark["id"])["analysis"]
+        == analysis
+    )
+    assert all(
+        ("｜" in i["analysis"]["suggested_name"]) == (version == PROMPT_VERSION)
+        for i in completed
+    )
 
 
 async def test_pause_restart_resume_reuses_completed_stages(tmp_path):
