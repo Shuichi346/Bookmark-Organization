@@ -12,6 +12,7 @@ const tree:Node[] = JSON.parse(document.querySelector("#tree-data")!.textContent
 const settings:Settings = JSON.parse(document.querySelector("#settings-data")!.textContent!);
 const csrf = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')!.content;
 const project = document.querySelector<HTMLElement>(".workspace")!.dataset.project!;
+let baseProposal = document.querySelector<HTMLElement>(".workspace")!.dataset.baseProposal || null;
 const query = <T extends Element>(selector:string) => document.querySelector<T>(selector)!;
 const t = (key:string) => messages[key] || messages.unknown_error;
 const alertBox = query<HTMLElement>("#alert");
@@ -82,6 +83,32 @@ function updateScope() {
  sessionStorage.setItem("scope-"+project,JSON.stringify({all,folders:checks().filter(c=>c.checked).map(c=>c.value),destination:destination.value}));
 }
 if(project) {
+ const namingMode=query<HTMLSelectElement>("#naming-mode");
+ const folderMode=query<HTMLSelectElement>("#folder-mode");
+ const naming=query<HTMLTextAreaElement>("#naming-prompt");
+ const foldersPrompt=query<HTMLTextAreaElement>("#folder-prompt");
+ const ruleValues=()=>({naming_mode:namingMode.value,folder_mode:folderMode.value,naming_prompt:naming.value,folder_prompt:foldersPrompt.value});
+ const updateRules=()=>{
+  naming.disabled=namingMode.value!=="custom";
+  foldersPrompt.disabled=folderMode.value!=="custom";
+  sessionStorage.setItem("rules-"+project,JSON.stringify(ruleValues()));
+ };
+ try {
+  const saved=JSON.parse(sessionStorage.getItem("rules-"+project)||"null");
+  if(saved) {
+   const savedNamingMode=saved.naming_mode ?? saved.preset;
+   const savedFolderMode=saved.folder_mode ?? saved.preset;
+   if(["purpose","custom"].includes(savedNamingMode)) namingMode.value=savedNamingMode;
+   if(["purpose","custom"].includes(savedFolderMode)) folderMode.value=savedFolderMode;
+   if(typeof saved.naming_prompt==="string") naming.value=saved.naming_prompt;
+   if(typeof saved.folder_prompt==="string") foldersPrompt.value=saved.folder_prompt;
+  }
+ } catch { /* Saved jobs remain available if a browser draft is corrupt. */ }
+ updateRules();
+ namingMode.addEventListener("change",updateRules);
+ folderMode.addEventListener("change",updateRules);
+ naming.addEventListener("input",updateRules);
+ foldersPrompt.addEventListener("input",updateRules);
  try {
   const saved=JSON.parse(sessionStorage.getItem("scope-"+project)||"null");
   if(saved){query<HTMLInputElement>("#scope-all").checked=saved.all;checks().forEach(c=>c.checked=saved.folders.includes(c.value)); updateScope(); if(Array.from(query<HTMLSelectElement>("#destination").options).some(o=>o.value===saved.destination)) query<HTMLSelectElement>("#destination").value=saved.destination;}
@@ -92,11 +119,18 @@ if(project) {
  query<HTMLSelectElement>("#destination").addEventListener("change",updateScope);
  query<HTMLFormElement>("#scope-form").addEventListener("submit",event=>{
   event.preventDefault();void safely(async()=>{
-   const result=await api("/api/projects/"+project+"/jobs","POST",{all:query<HTMLInputElement>("#scope-all").checked,folders:normalized(),destination:query<HTMLSelectElement>("#destination").value,token:crypto.randomUUID()});
+   const result=await api("/api/projects/"+project+"/jobs","POST",{all:query<HTMLInputElement>("#scope-all").checked,folders:normalized(),destination:query<HTMLSelectElement>("#destination").value,token:crypto.randomUUID(),base_proposal:baseProposal,rules:ruleValues()});
    const current=document.querySelector("#job-region");
    if(current) current.remove();
    location.href="/?project="+project+"&job="+result.id;
   });
+ });
+ document.querySelector("#continue-organizing")?.addEventListener("click",()=>{
+  query<HTMLInputElement>("#scope-all").checked=false;
+  checks().forEach(check=>check.checked=false);
+  updateScope();
+  query<HTMLElement>("#scope-form").scrollIntoView({block:"start"});
+  namingMode.focus({preventScroll:true});
  });
 }
 function formSettings():Settings {
@@ -222,6 +256,9 @@ document.body.addEventListener("click",event=>{
   const section=query<HTMLElement>("#proposal-section");const row=target.closest<HTMLElement>("tr")!;
   const result=await api("/api/proposals/"+section.dataset.proposal+"/items/"+row.dataset.bookmark,"PATCH",{name:row.querySelector<HTMLInputElement>(".edit-name")!.value,parent:row.querySelector<HTMLSelectElement>(".edit-parent")!.value});
   section.dataset.proposal=result.id;query<HTMLAnchorElement>("#export").href="/api/proposals/"+result.id+"/export";
+  baseProposal=result.id;
+  tree.splice(0,tree.length,...result.tree);
+  updateScope();
   history.replaceState(null,"","/?project="+project+"&proposal="+result.id);
   await refreshComparison();
  });

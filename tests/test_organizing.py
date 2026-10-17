@@ -182,6 +182,54 @@ def test_purpose_assignments_do_not_depend_on_provider_or_similarity():
     assert not any(node["name"] == "要確認" for node in result)
 
 
+def test_custom_folder_instructions_preserve_requested_paths_and_small_subfolders():
+    tree, snapshot, items = purpose_fixture(
+        ["JS libraries/UI", "Python/HTTP", "ユーティリティ", "GitHub"]
+    )
+    snapshot["rules"] = {
+        "preset": "custom",
+        "naming_prompt": "Use the original product name in English",
+        "folder_prompt": "Group by JS libraries, Python, utilities, or GitHub",
+    }
+    for index, item in enumerate(items):
+        item["analysis"]["suggested_name"] = f"Tool {index}"
+    # Identical vectors must not merge independently requested folder paths.
+    result = propose(tree, snapshot, items, False)
+    assert [
+        destination_path(result, item["bookmark"], snapshot["destination"])
+        for item in items
+    ] == [["JS libraries", "UI"], ["Python", "HTTP"], ["ユーティリティ"], ["GitHub"]]
+    by_id = {node["id"]: node for node in result}
+    assert [by_id[item["bookmark"]]["name"] for item in items] == [
+        f"Tool {index}" for index in range(len(items))
+    ]
+    assert validate(tree, result, snapshot["targets"])
+
+
+@pytest.mark.parametrize(
+    "naming,folders,name,path",
+    [
+        ("English names", "", "Tool", "GitHub"),
+        ("", "By language", "Tool", "Python"),
+        ("English names", "By language", "Tool", "Python/HTTP/Client"),
+        ("English names", "By language", "Tool", "Python/.."),
+    ],
+)
+def test_custom_proposal_revalidates_safety_and_unchanged_rule_dimension(
+    naming, folders, name, path
+):
+    tree, snapshot, items = purpose_fixture([path])
+    snapshot["rules"] = {
+        "preset": "custom",
+        "naming_prompt": naming,
+        "folder_prompt": folders,
+    }
+    items[0]["analysis"]["suggested_name"] = name
+    with pytest.raises(AppError) as invalid:
+        propose(tree, snapshot, items, False)
+    assert invalid.value.code == "analysis_invalid"
+
+
 @pytest.mark.parametrize(
     ("categories", "expected"),
     [

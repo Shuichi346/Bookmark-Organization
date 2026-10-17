@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-17
+
+### Added
+
+- Added independent naming and folder instructions for each analysis, with the existing purpose-based rules available as a preset and blank custom fields falling back independently.
+- Added continuous organization from the latest saved proposal: users could organize A, then B and F with different instructions while keeping C and previous edits unchanged. Reopening the project restored the saved result, and exports included all saved rounds.
+- Added separate Preset/Custom selectors for naming and folder grouping, retaining inactive drafts and saving each choice independently.
+
+### Fixed
+
+- Updated selection counts immediately after saved bookmark moves and prevented stale proposal edits and published-job retries from replacing later results.
+
 ## 2026-10-13
 
 ### Changed

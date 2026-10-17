@@ -15,10 +15,12 @@ from bookmark_organization.db import Store
 from bookmark_organization.jobs import create_job, job_state
 from bookmark_organization.llm import LocalAI
 from bookmark_organization.organizing import propose
+from bookmark_organization.policy import CUSTOM_PROMPT_VERSION
 from bookmark_organization.schemas import (
     Endpoint,
     InferenceSettings,
     JobRequest,
+    OrganizationRules,
     Settings,
 )
 
@@ -40,6 +42,107 @@ FIXTURES = [
         "functions to JavaScript developers.",
     ),
 ]
+
+
+async def verify_custom(settings_path: Path, analysis_only: bool = False):
+    """Exercise custom policy with the selected providers on public-text fixtures."""
+    source = Store(settings_path.parent)
+    settings = Settings.model_validate_json(settings_path.read_text())
+    settings.api_timeout = 90
+    rules = OrganizationRules(
+        preset="custom",
+        naming_prompt="Use exactly the product name in English: FastAPI or TypeScript. No description or separator.",
+        folder_prompt="Classify FastAPI as Python/Frameworks and TypeScript as JS libraries/Language. Use these exact paths.",
+    )
+    ai = LocalAI(settings, api_key=source.openrouter_api_key())
+    ai.rules = rules
+    ai.prompt_version = CUSTOM_PROMPT_VERSION
+    try:
+        await ai.ensure_available(settings.generation)
+        if not analysis_only:
+            await ai.ensure_available(settings.embedding, role="embedding")
+        nodes = parse(
+            b'<DL><H3>Sample</H3><DL><A HREF="https://fastapi.tiangolo.com/">FastAPI</A>'
+            b'<A HREF="https://www.typescriptlang.org/docs/">TypeScript</A></DL></DL>'
+        )
+        items = []
+        samples = []
+        for bookmark, (_, title, text), name, category in zip(
+            (n for n in nodes if n["kind"] == "bookmark"),
+            FIXTURES,
+            ["FastAPI", "TypeScript"],
+            ["Python/Frameworks", "JS libraries/Language"],
+        ):
+            page = {"status": "ok", "title": title, "description": title, "text": text}
+            analysis = await ai.analyze(bookmark, page)
+            assert analysis["suggested_name"] == name, analysis
+            assert analysis["candidate_categories"] == [category], analysis
+            if analysis_only:
+                samples.append({"name": name, "folder": category})
+                continue
+            embedding = await ai.embed(page, analysis)
+            assert np.isfinite(embedding["vector"]).all()
+            items.append(
+                {
+                    "bookmark": bookmark["id"],
+                    "state": "complete",
+                    "analysis": analysis,
+                    "embedding": embedding,
+                    "retrieval": page,
+                }
+            )
+            samples.append(
+                {
+                    "name": name,
+                    "folder": category,
+                    "dimensions": embedding["dimensions"],
+                }
+            )
+        if analysis_only:
+            print(
+                json.dumps(
+                    {
+                        "result": "Custom policy actual-model analysis passed; embeddings and export were not exercised",
+                        "generation": settings.generation.model,
+                        "samples": samples,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return
+        snapshot = {
+            "targets": [i["bookmark"] for i in items],
+            "settings": settings.model_dump(),
+            "destination": "root",
+            "folders": [],
+            "prompt_version": CUSTOM_PROMPT_VERSION,
+            "rules": rules.model_dump(),
+        }
+        result = propose(nodes, snapshot, items, False)
+        assert url_counts(parse(export(result))) == url_counts(nodes)
+        folders = {n["id"]: n for n in result if n["kind"] == "folder"}
+        for item, sample in zip(items, samples):
+            node = next(n for n in result if n["id"] == item["bookmark"])
+            child = folders[node["parent"]]
+            assert (
+                folders[child["parent"]]["name"] + "/" + child["name"]
+                == sample["folder"]
+            )
+        print(
+            json.dumps(
+                {
+                    "result": "Custom policy actual-model analysis, embeddings and export passed",
+                    "generation": settings.generation.model,
+                    "embedding": settings.embedding.model,
+                    "samples": samples,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    finally:
+        await ai.close()
 
 
 async def verify_codex(settings: Settings):
@@ -237,9 +340,30 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--settings", type=Path, required=True)
     parser.add_argument(
+        "--analysis-only",
+        action="store_true",
+        help="With --custom, exercise generation only without embeddings or export",
+    )
+    parser.add_argument(
+        "--custom",
+        action="store_true",
+        help="Verify custom rules using the selected providers and two public-text fixtures",
+    )
+    parser.add_argument(
         "--codex",
         action="store_true",
         help="Verify gpt-6-luna/low with ChatGPT login on two fixtures; no embedding or export calls",
     )
     args = parser.parse_args()
-    asyncio.run(asyncio.wait_for(verify(args.settings, args.codex), timeout=1190))
+    if args.custom and args.codex:
+        parser.error("Choose either --custom or --codex")
+    if args.analysis_only and not args.custom:
+        parser.error("--analysis-only requires --custom")
+    asyncio.run(
+        asyncio.wait_for(
+            verify_custom(args.settings, args.analysis_only)
+            if args.custom
+            else verify(args.settings, args.codex),
+            timeout=1190,
+        )
+    )

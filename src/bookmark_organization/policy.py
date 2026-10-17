@@ -1,7 +1,8 @@
-"""Versioned naming and purpose-based folder rules for new analyses."""
+"""Versioned preset and custom naming/folder rules for new analyses."""
 
 LEGACY_PROMPT_VERSION = "bookmark-ja-v1"
 PROMPT_VERSION = "bookmark-ja-purpose-v3"
+CUSTOM_PROMPT_VERSION = "bookmark-custom-v1"
 MIN_SUBFOLDER_ITEMS = 3
 VAGUE_LABELS = {"便利", "おすすめ", "その他", "画像ツール", "開発関連"}
 SOURCE_LABELS = {"GitHub", "Webサービス", "記事", "ブログ", "公式サイト"}
@@ -30,7 +31,7 @@ FOLDER_PATHS = [
     for path in [category, *(f"{category}/{child}" for child in children)]
 ]
 
-PURPOSE_RULES = """
+NAMING_RULES = """
 名前は検索のため、フォルダーは一覧から探すために使う。
 suggested_name は必ず「具体的な用途｜固有名詞」の形式にする。
 全角の区切り「｜」を1つ使い、日本語の用途を先頭、サイト・ツール・資料名を後ろに置く。
@@ -57,7 +58,8 @@ suggested_name は必ず「具体的な用途｜固有名詞」の形式にす�
 - 商品・サービスの個別ページ: 商品名・検討目的｜サイト名。例: USB-Cハブの仕様確認｜メーカー名
 サイト全体と特定ページを区別し、個別ページにはそのページ固有の内容を名前にする。
 purpose には主な利用目的と探す状況を記す。
-
+""".strip()
+FOLDER_RULES = """
 candidate_categories は保存先の用途パスを1つだけ選ぶ（上位用途 または 上位用途/下位用途）。
 以下の構成例を優先し、当てはまらない場合は同じ目的基準で具体的な用途名を付ける。
 GitHub・Webサービス・記事といった提供元や形式で分類しない。
@@ -70,7 +72,22 @@ GitHub・Webサービス・記事といった提供元や形式で分類しな�
 「あとで整理」は一時的な保存先であり、定期的に見直す。
 空のフォルダーや全分類を先に作らない。整理先の配下は原則2階層まで、少ない下位分類は上位に統合する。
 """.strip()
-PURPOSE_RULES += "\n用途フォルダー構成例:\n" + "\n".join(
+FOLDER_RULES += "\n用途フォルダー構成例:\n" + "\n".join(
     f"- {category}: {' ／ '.join(children)}"
     for category, children in FOLDER_TAXONOMY.items()
 )
+PURPOSE_RULES = NAMING_RULES + "\n\n" + FOLDER_RULES
+
+CUSTOM_NAMING_RULES = """
+Use the user's naming instructions for suggested_name, including the requested
+language and format. Preserve proper names and do not invent unsupported features.
+When no language is requested, use Japanese. Return a nonempty single-line name.
+""".strip()
+CUSTOM_FOLDER_RULES = """
+Use the user's folder instructions for candidate_categories, including the requested
+language and grouping criteria. Return exactly one destination path, with one or
+two nonempty folder names separated by /. Do not use / or backslash within a folder
+name, control characters, or the folder names '.' or '..'. Create only the path that
+fits this page; do not invent an unrelated purpose taxonomy. Requested subfolders
+are retained even if they contain only one bookmark.
+""".strip()

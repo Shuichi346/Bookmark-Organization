@@ -131,6 +131,18 @@ class Store:
             self.one("SELECT tree FROM projects WHERE id=?", (project,))["tree"]
         )
 
+    def latest_proposal(self, project: str) -> str | None:
+        rows = self.rows(
+            "SELECT p.id FROM proposal_versions p JOIN jobs j ON j.id=p.job "
+            "WHERE j.project=? ORDER BY p.rowid DESC LIMIT 1",
+            (project,),
+        )
+        return rows[0]["id"] if rows else None
+
+    def job_tree(self, project: str, snapshot: dict) -> list[dict]:
+        # Legacy jobs predate continuation and always use the immutable import.
+        return snapshot.get("base_tree", self.tree(project))
+
     def items(self, job: str) -> list[dict]:
         rows = self.rows("SELECT * FROM job_items WHERE job=? ORDER BY rowid", (job,))
         for row in rows:

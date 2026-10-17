@@ -8,30 +8,58 @@ from bookmark_organization.db import Store
 from bookmark_organization.fetching import Fetcher, RequestPacer
 from bookmark_organization.llm import PROMPT_VERSION, LocalAI
 from bookmark_organization.organizing import scope
-from bookmark_organization.policy import LEGACY_PROMPT_VERSION
-from bookmark_organization.schemas import AppError, JobRequest, Settings
+from bookmark_organization.policy import CUSTOM_PROMPT_VERSION, LEGACY_PROMPT_VERSION
+from bookmark_organization.schemas import (
+    AppError,
+    JobRequest,
+    OrganizationRules,
+    Settings,
+)
 
 TERMINAL = {"complete", "retrieval_failed", "analysis_failed"}
 
 
 def create_job(store: Store, project: str, request: JobRequest) -> str:
-    tree = store.tree(project)
-    targets, folders, destination = scope(tree, request)
-    if not targets:
-        raise AppError("empty_scope")
-    snapshot = {
-        "targets": targets,
-        "folders": folders,
-        "destination": destination,
-        "settings": store.settings().model_dump(),
-        "prompt_version": PROMPT_VERSION,
-    }
+    # Imported lazily because proposal inspection also exposes job progress.
+    from bookmark_organization.proposals import get_proposal
+
     with store.connect() as db:
+        db.execute("BEGIN IMMEDIATE")
         old = db.execute(
             "SELECT id FROM jobs WHERE project=? AND token=?", (project, request.token)
         ).fetchone()
         if old:
             return old["id"]
+        latest = store.latest_proposal(project)
+        if request.base_proposal and request.base_proposal != latest:
+            raise AppError("stale_proposal", 409)
+        base_proposal = request.base_proposal or latest
+        baseline = get_proposal(store, base_proposal) if base_proposal else None
+        if baseline and baseline["project"] != project:
+            raise AppError("invalid_scope")
+        tree = baseline["tree"] if baseline else store.tree(project)
+        targets, folders, destination = scope(tree, request)
+        if not targets:
+            raise AppError("empty_scope")
+        snapshot = {
+            "targets": targets,
+            "folders": folders,
+            "destination": destination,
+            "settings": store.settings().model_dump(),
+            "prompt_version": (
+                CUSTOM_PROMPT_VERSION
+                if "custom" in (request.rules.naming_mode, request.rules.folder_mode)
+                else PROMPT_VERSION
+            ),
+            "rules": request.rules.model_dump(),
+            "base_proposal": base_proposal,
+            "base_tree": tree,
+            "cumulative_targets": list(
+                dict.fromkeys(
+                    (baseline["cumulative_targets"] if baseline else []) + targets
+                )
+            ),
+        }
         identifier = uid()
         try:
             db.execute(
@@ -51,7 +79,10 @@ def job_state(store: Store, job: str) -> dict:
     row = store.one("SELECT * FROM jobs WHERE id=?", (job,))
     row["snapshot"] = json.loads(row["snapshot"])
     row["items"] = store.items(job)
-    nodes = {n["id"]: n for n in store.tree(row["project"])}
+    row["has_proposal"] = bool(
+        store.rows("SELECT id FROM proposal_versions WHERE job=? LIMIT 1", (job,))
+    )
+    nodes = {n["id"]: n for n in store.job_tree(row["project"], row["snapshot"])}
     for item in row["items"]:
         item["url"] = nodes[item["bookmark"]]["url"]
     counts = {s: sum(i["state"] == s for i in row["items"]) for s in TERMINAL}
@@ -63,7 +94,8 @@ def job_state(store: Store, job: str) -> dict:
 
 def control(store: Store, job: str, action: str):
     with store.connect() as db:
-        row = db.execute("SELECT state FROM jobs WHERE id=?", (job,)).fetchone()
+        db.execute("BEGIN IMMEDIATE")
+        row = db.execute("SELECT * FROM jobs WHERE id=?", (job,)).fetchone()
         if row is None:
             raise AppError("not_found", 404)
         state = row["state"]
@@ -77,6 +109,19 @@ def control(store: Store, job: str, action: str):
         }
         if state not in allowed.get(action, set()):
             raise AppError("invalid_job_action", 409)
+        if action in {"resume", "retry-failed"}:
+            own_proposals = {
+                p["id"]
+                for p in db.execute(
+                    "SELECT id FROM proposal_versions WHERE job=?", (job,)
+                )
+            }
+            if action == "retry-failed" and own_proposals:
+                raise AppError("job_already_proposed", 409)
+            latest = store.latest_proposal(row["project"])
+            base = json.loads(row["snapshot"]).get("base_proposal")
+            if latest != base and latest not in own_proposals:
+                raise AppError("stale_proposal", 409)
         if action == "pause":
             db.execute(
                 "UPDATE jobs SET state='paused' WHERE id=? AND state='running'", (job,)
@@ -146,7 +191,8 @@ class Worker:
         fetcher = self.fetch_factory(settings)
         ai = self.ai_factory(settings)
         ai.prompt_version = snapshot.get("prompt_version", LEGACY_PROMPT_VERSION)
-        tree = {n["id"]: n for n in self.store.tree(job["project"])}
+        ai.rules = OrganizationRules.model_validate(snapshot.get("rules", {}))
+        tree = {n["id"]: n for n in self.store.job_tree(job["project"], snapshot)}
         try:
             # Validate each selected provider/model once for this processing batch.
             await ai.ensure_available(settings.generation)

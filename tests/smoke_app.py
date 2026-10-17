@@ -533,6 +533,10 @@ async def verify():
                         await expect(details.first.locator("p").last).to_have_text(
                             "開発者が技術を学ぶための公式ドキュメント。"
                         )
+                        prior_parent = await page.locator(
+                            ".edit-parent"
+                        ).first.input_value()
+                        await page.locator(".edit-parent").first.select_option(ids[0])
                         await page.locator(".edit-name").first.fill(
                             "Edited 日本語 name"
                         )
@@ -563,6 +567,25 @@ async def verify():
                                 base + "/api/proposals/" + proposal
                             )
                         ).json()
+                        # A saved move updates the in-memory scope tree immediately.
+                        await page.locator("#continue-organizing").click()
+                        await page.locator(
+                            f'.folder-check[value="{prior_parent}"]'
+                        ).check()
+                        remaining_in_folder = sum(
+                            n["kind"] == "bookmark" and n["parent"] == prior_parent
+                            for n in result["tree"]
+                        )
+                        await expect(page.locator("#selected-count")).to_contain_text(
+                            str(remaining_in_folder)
+                        )
+                        await page.locator(
+                            f'.folder-check[value="{prior_parent}"]'
+                        ).uncheck()
+                        for identifier in ids:
+                            await page.locator(
+                                f'.folder-check[value="{identifier}"]'
+                            ).check()
                         validate(result["original"], result["tree"], result["targets"])
                         async with page.expect_download() as download_info:
                             await page.locator("#export").click()
@@ -626,6 +649,127 @@ async def verify():
                         ).json()
                         assert unchanged["tree"] == result["tree"]
                         assert await page.locator(".folder-check:checked").count() == 2
+                        # Continue from the saved edit, changing rules for only one folder.
+                        await page.locator("#continue-organizing").click()
+                        await expect(page.locator("#scope-all")).not_to_be_checked()
+                        assert await page.locator(".folder-check:checked").count() == 0
+                        untouched_folder = next(
+                            n["id"]
+                            for n in nodes
+                            if n["kind"] == "folder" and n["name"] == "Untouched"
+                        )
+                        await page.locator(
+                            f'.folder-check[value="{untouched_folder}"]'
+                        ).check()
+                        await page.locator("#naming-mode").select_option("purpose")
+                        await page.locator("#folder-mode").select_option("purpose")
+                        await expect(page.locator("#naming-prompt")).to_be_disabled()
+                        await page.locator("#naming-mode").select_option("custom")
+                        await expect(page.locator("#naming-prompt")).to_be_enabled()
+                        await expect(page.locator("#folder-prompt")).to_be_disabled()
+                        await page.locator("#folder-mode").select_option("custom")
+                        naming_rule = "サービス名を先頭にして英語で短く命名する"
+                        folder_rule = (
+                            "JSライブラリ関係、Python、ユーティリティ系で分ける"
+                        )
+                        await page.locator("#naming-prompt").fill(naming_rule)
+                        await page.locator("#folder-prompt").fill(folder_rule)
+                        # Each selector keeps its draft while inactive, across reload.
+                        await page.locator("#naming-mode").select_option("purpose")
+                        await expect(page.locator("#naming-prompt")).to_be_disabled()
+                        await expect(page.locator("#folder-prompt")).to_be_enabled()
+                        await page.reload()
+                        await expect(page.locator("#naming-mode")).to_have_value(
+                            "purpose"
+                        )
+                        await expect(page.locator("#folder-mode")).to_have_value(
+                            "custom"
+                        )
+                        await expect(page.locator("#naming-prompt")).to_be_disabled()
+                        await expect(page.locator("#folder-prompt")).to_be_enabled()
+                        await page.locator("#naming-mode").select_option("custom")
+                        await page.locator("#folder-mode").select_option("purpose")
+                        await expect(page.locator("#folder-prompt")).to_be_disabled()
+                        await expect(page.locator("#naming-prompt")).to_be_enabled()
+                        await page.reload()
+                        await expect(page.locator("#naming-mode")).to_have_value(
+                            "custom"
+                        )
+                        await expect(page.locator("#folder-mode")).to_have_value(
+                            "purpose"
+                        )
+                        await page.locator("#folder-mode").select_option("custom")
+                        await expect(page.locator("#naming-prompt")).to_have_value(
+                            naming_rule
+                        )
+                        await expect(page.locator("#folder-prompt")).to_have_value(
+                            folder_rule
+                        )
+                        for width, height in [(1440, 900), (390, 844)]:
+                            await page.set_viewport_size(
+                                {"width": width, "height": height}
+                            )
+                            await page.locator(
+                                "#rule-editor"
+                            ).scroll_into_view_if_needed()
+                            assert await page.evaluate(
+                                "document.documentElement.scrollWidth <= innerWidth"
+                            )
+                            if os.environ.get("BOOKMARK_QA_SCREENSHOTS"):
+                                image = (
+                                    Path(os.environ["BOOKMARK_QA_SCREENSHOTS"])
+                                    / f"custom-rules-{lang}-{width}.png"
+                                )
+                                image.parent.mkdir(parents=True, exist_ok=True)
+                                await page.screenshot(path=str(image))
+                        await page.locator("#scope-form button").click()
+                        await page.wait_for_url("**&job=*")
+                        await expect(page.locator(".job")).to_have_attribute(
+                            "data-state", "complete", timeout=20000
+                        )
+                        next_job = await page.locator(".job").get_attribute("data-job")
+                        state = await (
+                            await context.request.get(base + "/api/jobs/" + next_job)
+                        ).json()
+                        assert state["snapshot"]["base_proposal"] == proposal
+                        assert state["snapshot"]["rules"] == {
+                            "naming_mode": "custom",
+                            "folder_mode": "custom",
+                            "naming_prompt": naming_rule,
+                            "folder_prompt": folder_rule,
+                        }
+                        assert len(state["snapshot"]["targets"]) == 1
+                        await page.locator('[data-action="proposal"]').click()
+                        await page.wait_for_url("**&proposal=*")
+                        await page.locator(".edit-name").first.wait_for()
+                        next_proposal = await page.locator(
+                            "#proposal-section"
+                        ).get_attribute("data-proposal")
+                        continued = await (
+                            await context.request.get(
+                                base + "/api/proposals/" + next_proposal
+                            )
+                        ).json()
+                        old_nodes = {n["id"]: n for n in result["tree"]}
+                        for n in continued["tree"]:
+                            if (
+                                n["id"] in old_nodes
+                                and n["id"] not in state["snapshot"]["targets"]
+                            ):
+                                assert n == old_nodes[n["id"]]
+                        async with page.expect_download() as continued_download:
+                            await page.locator("#export").click()
+                        download = await continued_download.value
+                        assert url_counts(
+                            parse(Path(await download.path()).read_bytes())
+                        ) == url_counts(parse(HTML))
+                        await page.goto(base + "/?project=" + state["project"])
+                        await expect(
+                            page.locator("#proposal-section")
+                        ).to_have_attribute("data-proposal", next_proposal)
+                        await expect(page.locator("#folder-prompt")).to_have_value(
+                            folder_rule
+                        )
                         # Invalid selection is presented from the current locale.
                         await page.locator("#scope-all").uncheck()
                         for check in await checks.all():

@@ -1,5 +1,21 @@
 # Notes
 
+## 2026-10-17
+
+### Custom rules and continuous organization
+
+`OrganizationRules` snapshots naming and folder prompts independently; `bookmark-custom-v1` replaces only the explicitly customized policy dimensions. The purpose preset keeps its schema and sparse-subfolder merging, while custom folder paths retain small subfolders. Page content remains untrusted and each request remains independent. Prompt and output bounds still apply.
+
+The selectors now persist `naming_mode` and `folder_mode` independently, so inactive nonempty prompts cannot override their presets. Older shared `preset` values are normalized only when read, without changing immutable snapshots. Browser drafts retain disabled text and migrate older shared selections. Regression tests exercise all four mode combinations and legacy input.
+
+The independent-selector follow-up passed 172 tests, Python static checks, frontend lint/typecheck/build and the English/Japanese Playwright workflow at desktop/mobile widths. Mixed selections, inactive drafts, reload restoration and explicit per-dimension job snapshots passed without overflow or unexpected browser errors. This changed selection/serialization only; it reused the actual-model policy evidence below without new inference calls.
+
+Each new job snapshots the latest proposal tree and cumulative authorized bookmark IDs. `get_proposal` and proposal saves validate both the immediate base (protecting prior edits outside the current scope) and immutable import (protecting original folders, IDs, attributes and URL multiplicities). Writes are serialized and stale bases/edits are rejected. Published jobs require a new analysis instead of retry, and editing a previous result cannot strand a completed unpublished child. Saved moves also update the browser's scope tree before continuing. `tests/test_continuation.py` covers A → edit → restart → B → F with C untouched, generated-folder selection and conflicting writes.
+
+Verified: 167 tests, Python static checks, frontend lint/typecheck/build, and the real-server Playwright workflow in both languages at 1440×900 and 390×844 passed. UI checks covered custom drafts after reload, preset switching, saved moves/counts, continuation snapshots, prior-edit preservation, project reopening and cumulative export, with no unexpected browser errors or overflow. Browser plugin was unavailable; screenshots from the existing Playwright workflow were inspected outside the repository. The existing HTMX eval build warning remained.
+
+Actual selected-provider verification passed with Codex `gpt-6-luna`/low for two independent custom analyses and LM Studio `text-embedding-embeddinggemma-2` for normalized 768-dimensional vectors. Requested exact names `FastAPI`/`TypeScript` and paths `Python/Frameworks`/`JS libraries/Language` survived proposal generation and integrity-checked export. These were public-text fixtures, not live page retrieval or processing of user bookmarks. The initial full-model check stopped while LM Studio was unavailable; after startup, a test-only missing snapshot setting was corrected and the complete run passed. The custom check is available through `tests/smoke_local_models.py --settings data/settings.json --custom`; `--analysis-only` isolates generation.
+
 ## 2026-10-13
 
 ### Codex subscription analysis

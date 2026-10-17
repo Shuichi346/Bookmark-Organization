@@ -144,26 +144,84 @@ class Analysis(BaseModel):
         return values
 
 
-class PurposeAnalysis(Analysis):
-    suggested_name: str = Field(
-        min_length=3,
-        max_length=200,
-        pattern=r"^[^｜\r\n]+｜[^｜\r\n]+$",
-        description="具体的な用途｜サイト・ツール・資料名［必要な種類・技術］",
-    )
+class OrganizationRules(BaseModel):
+    naming_mode: Literal["purpose", "custom"] = "purpose"
+    folder_mode: Literal["purpose", "custom"] = "purpose"
+    naming_prompt: str = Field(default="", max_length=4000)
+    folder_prompt: str = Field(default="", max_length=4000)
+
+    @model_validator(mode="before")
+    @classmethod
+    def saved_shared_preset(cls, value):
+        # Read older snapshots without rewriting their saved instructions.
+        if isinstance(value, dict) and "preset" in value:
+            value = dict(value)
+            preset = value.pop("preset")
+            value.setdefault("naming_mode", preset)
+            value.setdefault("folder_mode", preset)
+        return value
+
+    @field_validator("naming_prompt", "folder_prompt")
+    @classmethod
+    def trim_prompt(cls, value: str) -> str:
+        return value.strip()
+
+    @property
+    def custom_naming(self) -> bool:
+        return self.naming_mode == "custom" and bool(self.naming_prompt)
+
+    @property
+    def custom_folders(self) -> bool:
+        return self.folder_mode == "custom" and bool(self.folder_prompt)
+
+
+class StructuredAnalysis(Analysis):
+    suggested_name: str = Field(min_length=1, max_length=200, pattern=r"^[^\r\n]+$")
     candidate_categories: list[
         Annotated[
             str,
             Field(
                 max_length=100,
                 pattern=r"^[^/\\\r\n]{1,100}(/[^/\\\r\n]{1,100})?$",
-                examples=FOLDER_PATHS,
             ),
         ]
     ] = Field(
         min_length=1,
         max_length=1,
-        description="探す作業に最も合う用途パスを1つ選ぶ",
+        description="Choose exactly one destination path, at most two folder levels",
+    )
+
+    @field_validator("suggested_name")
+    @classmethod
+    def single_line_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or any(ord(char) < 32 for char in value):
+            raise ValueError("nonempty single-line name required")
+        return value
+
+    @field_validator("candidate_categories")
+    @classmethod
+    def safe_path(cls, values: list[str]) -> list[str]:
+        for value in values:
+            parts = value.split("/")
+            if not 1 <= len(parts) <= 2 or any(
+                not part.strip()
+                or part != part.strip()
+                or part in {".", ".."}
+                or "\\" in part
+                or any(ord(char) < 32 for char in part)
+                for part in parts
+            ):
+                raise ValueError("one or two safe folder names required")
+        return values
+
+
+class PurposeNameAnalysis(StructuredAnalysis):
+    suggested_name: str = Field(
+        min_length=3,
+        max_length=200,
+        pattern=r"^[^｜\r\n]+｜[^｜\r\n]+$",
+        description="具体的な用途｜サイト・ツール・資料名［必要な種類・技術］",
     )
 
     @field_validator("suggested_name")
@@ -173,6 +231,24 @@ class PurposeAnalysis(Analysis):
         if not purpose or not name or purpose in VAGUE_LABELS:
             raise ValueError("specific purpose and proper name required")
         return f"{purpose}｜{name}"
+
+
+PurposeFolderPath = Annotated[
+    str,
+    Field(
+        max_length=100,
+        pattern=r"^[^/\\\r\n]{1,100}(/[^/\\\r\n]{1,100})?$",
+        examples=FOLDER_PATHS,
+    ),
+]
+
+
+class PurposeFolderAnalysis(StructuredAnalysis):
+    candidate_categories: list[PurposeFolderPath] = Field(
+        min_length=1,
+        max_length=1,
+        description="探す作業に最も合う用途パスを1つ選ぶ",
+    )
 
     @field_validator("candidate_categories")
     @classmethod
@@ -191,11 +267,31 @@ class PurposeAnalysis(Analysis):
         return values
 
 
+class PurposeAnalysis(PurposeNameAnalysis, PurposeFolderAnalysis):
+    candidate_categories: list[PurposeFolderPath] = Field(
+        min_length=1,
+        max_length=1,
+        description="探す作業に最も合う用途パスを1つ選ぶ",
+    )
+
+
+def analysis_model(rules: OrganizationRules) -> type[Analysis]:
+    if rules.custom_naming and rules.custom_folders:
+        return StructuredAnalysis
+    if rules.custom_naming:
+        return PurposeFolderAnalysis
+    if rules.custom_folders:
+        return PurposeNameAnalysis
+    return PurposeAnalysis
+
+
 class JobRequest(BaseModel):
     folders: list[str] = Field(default_factory=list)
     all: bool = False
     destination: str | None = None
     token: str = Field(min_length=8, max_length=100)
+    rules: OrganizationRules = Field(default_factory=OrganizationRules)
+    base_proposal: str | None = None
 
 
 class ProposalRequest(BaseModel):

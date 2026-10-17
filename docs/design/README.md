@@ -1,6 +1,6 @@
 # Interface specification
 
-Reference: concept.png, generated with built-in Image Gen. This is a state inventory, not production UI or real results. The implementation follows the plan rather than incidental generated copy: use the two specified models, a single Automatic/English/日本語 selector, one combined selected region, and an explicit destination. No estimate of remaining time without evidence. Generated names remain Japanese irrespective of interface language.
+Reference: concept.png, generated with built-in Image Gen. This is a state inventory, not production UI or real results. The implementation follows the plan rather than incidental generated copy: use the two specified models, a single Automatic/English/日本語 selector, one combined selected region, and an explicit destination. No estimate of remaining time without evidence. The default preset generates Japanese names; custom instructions may request other languages. Interface language does not change generation rules.
 
 Pure white background (#ffffff), sidebar #f5f7f9, text #182433, muted #637083, border #dce2e8, accent #087f75, error #a52c39. System sans-serif including Japanese fallbacks. Heading 28px/1.3, body and controls 14px/1.5, tables 13px/1.5. Spacing 8/16/24px; radius 6px. No image overlays, decorative imagery or gradients. No icon library: semantic native form controls and text suffice.
 
@@ -17,6 +17,12 @@ Automated verification asserts document language, catalog/client consistency, pa
 ## Naming and folder guidance
 
 The workflow includes a native expandable guide in both locales. It explains purpose-first Japanese names, page-specific document/article naming, optional GitHub type/technology suffixes, task-based browsing folders, the three-item minimum for useful subfolders and the two-level limit below the organization destination. It states that new analyses use these rules while saved jobs/proposals retain their original policy. Generated purpose categories remain Japanese in both interface languages. The advanced similarity threshold is labeled as related-item ordering for new jobs and classification for legacy jobs.
+
+## Custom rules and continued organization
+
+The scope form includes separate Preset/Custom selectors for naming and folder grouping, each paired with its own labeled textarea. Each preset disables only its paired field, retaining its draft without applying it. Each custom choice enables only its paired field, bounded to 4,000 characters; a blank field uses that dimension of the preset. The two-column editor stacks at mobile widths. Drafts survive language changes and reload within the browser session; job snapshots restore submitted instructions after reopening.
+
+The sidebar represents the current saved tree. A saved-result notice identifies the next job’s baseline. “Organize another folder” clears the selection and focuses the naming selector without discarding saved results. Each proposal and manual edit is saved as a revision; exports contain cumulative results. Save updates the in-memory tree as well as the comparison so counts reflect manual moves immediately. Published jobs disable Retry failed and explain that reprocessing uses a new analysis. Stale writes and editing a baseline with a completed unpublished child produce localized recovery instructions.
 
 ## Image Gen prompt
 

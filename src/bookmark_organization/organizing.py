@@ -8,7 +8,12 @@ from sklearn.cluster import AgglomerativeClustering
 from bookmark_organization.bookmarks import uid
 from bookmark_organization.integrity import validate
 from bookmark_organization.policy import LEGACY_PROMPT_VERSION, MIN_SUBFOLDER_ITEMS
-from bookmark_organization.schemas import AppError, JobRequest, PurposeAnalysis
+from bookmark_organization.schemas import (
+    AppError,
+    JobRequest,
+    OrganizationRules,
+    analysis_model,
+)
 
 FAILURE_FOLDERS = {
     "not_found": "404",
@@ -143,9 +148,14 @@ def propose(
     paths: dict[str, list[str]] = {}
     names: dict[str, str] = {}
     if purpose_based:
+        try:
+            rules = OrganizationRules.model_validate(snapshot.get("rules", {}))
+        except ValidationError as exc:
+            raise AppError("analysis_invalid") from exc
+        schema = analysis_model(rules)
         for item in good:
             try:
-                analysis = PurposeAnalysis.model_validate(item["analysis"])
+                analysis = schema.model_validate(item["analysis"])
             except ValidationError as exc:
                 raise AppError("analysis_invalid") from exc
             paths[item["bookmark"]] = analysis.candidate_categories[0].split("/")
@@ -165,11 +175,14 @@ def propose(
             if purpose_based:
                 path = paths[item["bookmark"]]
                 parent = folder(path[0], destination)
-                # Only split a populated subtype when it distinguishes siblings.
-                if (
-                    len(path) == 2
-                    and path_counts[tuple(path)] >= MIN_SUBFOLDER_ITEMS
-                    and top_counts[path[0]] > path_counts[tuple(path)]
+                # Explicit user paths retain small subfolders; preset paths split
+                # only a populated subtype that distinguishes siblings.
+                if len(path) == 2 and (
+                    rules.custom_folders
+                    or (
+                        path_counts[tuple(path)] >= MIN_SUBFOLDER_ITEMS
+                        and top_counts[path[0]] > path_counts[tuple(path)]
+                    )
                 ):
                     parent = folder(path[1], parent)
             n = by_id[item["bookmark"]]

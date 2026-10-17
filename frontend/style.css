@@ -4,5 +4,7 @@
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 
 .workspace,main{width:100%}section,form,#job-region,#comparison{min-width:0;max-width:100%}.table-scroll{width:100%}
+textarea{font:inherit;line-height:1.5;border:1px solid var(--border);border-radius:6px;padding:10px;background:#fff;color:#182433;max-width:100%;min-width:0;resize:vertical}
+.form-grid textarea{display:block;width:100%;margin-top:6px}textarea:disabled{background:#f5f7f9;color:var(--muted)}.saved-baseline{color:var(--accent)}
 /* Hidden labels use a bounded origin so scrolled table cells cannot expand the page. */
 .visually-hidden{left:0;top:0;width:1px;max-width:1px}

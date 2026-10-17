@@ -9,7 +9,7 @@
 
 # Bookmark Organization
 
-A local web application that organizes Chrome bookmarks with local AI models, OpenRouter, or Codex using your ChatGPT plan. Import an exported bookmark file, choose the folders to process, review suggested Japanese names and purpose-based folders, and download Chrome-compatible HTML.
+A local web application that organizes Chrome bookmarks with local AI models, OpenRouter, or Codex using your ChatGPT plan. Import an exported bookmark file, choose the folders to process, set naming and folder instructions, review suggestions, and download Chrome-compatible HTML.
 
 The application preserves the original imported file and keeps duplicate URLs as separate bookmarks. Failed page retrieval never deletes a bookmark. Before export, it checks bookmark identities, counts, URL multiplicities, and unchanged content outside your selection.
 
@@ -20,7 +20,9 @@ The application preserves the original imported file and keeps duplicate URLs as
 - Compare original and proposed names and locations, search or filter results, and save edits as new proposal versions.
 - Pause, resume, cancel, and manually retry failed items, with progress saved across server restarts.
 - Choose generation and embedding models independently through LM Studio, Ollama or OpenRouter, or use Codex for generation.
-- Switch between English and Japanese interfaces. Generated names remain Japanese.
+- Set naming and folder instructions independently, or use the current purpose-based preset.
+- Continue from saved results and organize another folder with different instructions.
+- Switch between English and Japanese interfaces. The preset generates Japanese names; custom instructions can choose another language.
 
 LM Studio and Ollama inference stays local. Choosing OpenRouter sends inputs to OpenRouter and its model providers and may incur usage charges. Choosing Codex sends analysis inputs to OpenAI and consumes your ChatGPT/Codex plan allowance. Retrieving bookmark content accesses the bookmarked websites. The application does not edit Chrome profiles directly or download models automatically.
 
@@ -84,21 +86,22 @@ For **Codex**, run `codex login` on the machine running the app and choose ChatG
 
 1. Export your Chrome bookmarks as UTF-8 HTML and import the file.
 2. Select all bookmarks, one folder, or several folders. Descendants are included, and overlapping selections are deduplicated. Multiple folders form one processing region; choose a selected folder that is not inside another selected folder as the destination. All-bookmark mode creates a root folder named `整理済み`.
-3. Start analysis and monitor progress. Closing the browser tab does not stop processing. **Pause** stops the next stage from starting, and **Resume** continues from saved progress. Interrupted jobs remain paused after a server restart until you resume them.
+3. Under **Rules for this analysis**, choose **Preset** or **Custom instructions** separately for naming and folder grouping. Each selector enables only its own custom field; inactive text is retained but ignored, and blank custom fields use the corresponding preset. Start analysis and monitor progress. Closing the browser tab does not stop processing. **Pause** stops the next stage from starting, and **Resume** continues from saved progress. Interrupted jobs remain paused after a server restart until you resume them.
    **Cancel** ends a running or paused job and releases the project for a new analysis. Original bookmarks, job settings and saved results remain intact. Cancelled jobs cannot be resumed, retried or used to create a proposal. Cancelling disconnects application requests; an external model provider may continue work already accepted.
 4. Review retrieval and analysis failures. Use **Retry failed** after fixing the cause. Retrieval failures retain original names in folders such as `404` or `アクセス制限`. Including analysis failures requires explicitly allowing `要確認` (Needs review).
 5. Create a proposal, compare names and locations, edit names or allowed destination folders, and save. Each save creates a new version while the original import remains unchanged.
-6. Export after integrity validation passes. You can also download the original imported file. Review exports in a separate Chrome profile: Chrome imports add bookmarks to the existing collection.
+6. To continue, click **Organize another folder**, select the next folder and adjust the instructions. Proposals and edits are saved automatically, and reopening the project uses the latest saved result. Unselected bookmarks retain saved names and locations. Once a proposal is saved, process its bookmarks again through a new analysis rather than retrying that published job.
+7. Export after integrity validation passes. The export includes all saved rounds. You can also download the original imported file. Review exports in a separate Chrome profile: Chrome imports add bookmarks to the existing collection.
 
 Start with a small file and check the suggestions before importing the result into Chrome. Category quality depends on page content and the selected model. Confidently classified single bookmarks retain their purpose folder; uncertain purposes use `あとで整理`, while permitted analysis failures use `要確認`. Selections exceeding the estimated 128 MiB clustering distance-memory budget must be processed in smaller folder groups.
 
 ### Naming and folder rules
 
-New analyses use Japanese names in the form `specific purpose｜site, tool or resource name`. Service names follow the task, such as `文章を翻訳｜DeepL`. GitHub entries distinguish apps, CLI tools, libraries, samples and curated lists, adding a type or language only when useful: `動画をダウンロード｜yt-dlp［CLI］`. Individual documents and articles describe their specific content, for example `正規表現の書き方を確認｜Python re`, rather than naming the whole site.
+The **Current rules** preset uses Japanese names in the form `specific purpose｜site, tool or resource name`. Service names follow the task, such as `文章を翻訳｜DeepL`. GitHub entries distinguish apps, CLI tools, libraries, samples and curated lists, adding a type or language only when useful: `動画をダウンロード｜yt-dlp［CLI］`. Individual documents and articles describe their specific content, for example `正規表現の書き方を確認｜Python re`, rather than naming the whole site.
 
 Folders reflect the task for which you would look for the bookmark, bringing official sites, repositories and articles together. Suggested areas include AI, images and video, development, files and documents, research, macOS and everyday life; other specific purposes are allowed. Original names and folder paths help infer intent when several uses fit. The selected destination (or the `整理済み` wrapper) contains at most two newly generated folder levels. A subtype gets a folder only when it has at least three bookmarks and its parent also contains other purposes; smaller or redundant subtypes stay in the parent. No unused categories are created. Review the temporary `あとで整理` folder regularly. Names should not repeat the entire folder hierarchy.
 
-The page includes an expandable guide. Existing jobs, including resumed and retried jobs, retain their snapshotted naming and grouping version; create a new analysis to apply these rules. Manual proposal edits remain available.
+The page includes an expandable preset guide. **Custom instructions** can replace the name format or folder scheme, for example grouping into `JS libraries`, `Python`, and `Utilities`. Custom folder paths retain explicitly requested small subfolders, with at most two generated levels below the destination. Each job saves its rules and starting tree; later changes apply only to new analyses. Existing jobs, including resumed and retried jobs, retain their snapshotted naming and grouping version; create a new analysis to apply these rules. Manual proposal edits remain available.
 
 ### Optional page rendering
 
@@ -147,7 +150,7 @@ uv run --locked python tests/smoke_app.py
 
 Unit tests use synthetic HTML, temporary databases, and fake transports. The browser smoke test requires built assets and Playwright Chromium; it runs a real application server with fake inference and checks the workflow in both languages at desktop and mobile widths.
 
-The separate actual-model acceptance test is:
+The separate default LM Studio actual-model acceptance test is:
 
 ```sh
 uv run --locked python tests/smoke_local_models.py --settings data/settings.json
@@ -161,6 +164,14 @@ uv run --locked python tests/smoke_local_models.py --settings data/settings.json
 
 This flag verifies Codex analysis only; it does not call embeddings, fetch live websites, export bookmarks, or change saved application settings.
 
-Without `--codex`, the harness requires LM Studio, its `lms` CLI, and the two GGUF models listed above with matching IDs in the settings file. Recorded real-model evidence covers LM Studio and Codex analysis. Ollama's adapter is covered by fake-transport unit tests. OpenRouter request shapes, authentication failures, role discovery, mixed providers and credential isolation are covered with mock transports. Synthetic checks do not prove actual-model compatibility or authenticated OpenRouter inference.
+Without `--codex` or `--custom`, the harness requires LM Studio, its `lms` CLI, and the two GGUF models listed above with matching IDs in the settings file. Recorded real-model evidence covers LM Studio and Codex analysis. Ollama's adapter is covered by fake-transport unit tests. OpenRouter request shapes, authentication failures, role discovery, mixed providers and credential isolation are covered with mock transports. Synthetic checks do not prove actual-model compatibility or authenticated OpenRouter inference.
 
 See the [interface specification](docs/design/README.md) and [implementation plan and verification history](PLANS.md) for design details and recorded evidence.
+
+To check custom English names and exact folder paths with the currently selected providers, including embeddings and export:
+
+```sh
+uv run --locked python tests/smoke_local_models.py --settings data/settings.json --custom
+```
+
+Add `--analysis-only` to check generation alone when the embedding runtime is unavailable. These checks use two public-text fixtures and do not retrieve live pages or change application settings.

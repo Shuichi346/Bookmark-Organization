@@ -116,7 +116,6 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
         )
         if not project and projects:
             project = projects[0]["id"]
-        tree = store.tree(project) if project else []
         jobs = (
             store.rows(
                 "SELECT id FROM jobs WHERE project=? ORDER BY created DESC,rowid DESC LIMIT 1",
@@ -126,13 +125,13 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
             else []
         )
         job = job_state(store, jobs[0]["id"]) if jobs else None
-        if not proposal and job:
-            rows = store.rows(
-                "SELECT id FROM proposal_versions WHERE job=? ORDER BY version DESC LIMIT 1",
-                (job["id"],),
-            )
-            proposal = rows[0]["id"] if rows else None
+        if not proposal and project:
+            proposal = store.latest_proposal(project)
         p = get_proposal(store, proposal) if proposal else None
+        if p and p["project"] != project:
+            raise AppError("invalid_scope")
+        tree = p["tree"] if p else store.tree(project) if project else []
+        rules = job["snapshot"].get("rules", {}) if job else {}
         token = request.cookies.get("csrf") or secrets.token_urlsafe(32)
         manifest_path = static / ".vite" / "manifest.json"
         if not manifest_path.exists():
@@ -149,6 +148,7 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
                 "tree": tree,
                 "job": job,
                 "proposal": p,
+                "rules": rules,
                 "csrf": token,
                 "settings": store.public_settings(),
                 "preference": request.cookies.get("language", "auto"),
@@ -250,7 +250,8 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
 
     @application.patch("/api/proposals/{identifier}/items/{bid}")
     async def edit_result(identifier: str, bid: str, values: ItemEdit):
-        return {"id": edit_proposal(store, identifier, bid, values)}
+        saved = edit_proposal(store, identifier, bid, values)
+        return {"id": saved, "tree": get_proposal(store, saved)["tree"]}
 
     @application.get("/api/proposals/{identifier}/export")
     async def download(identifier: str):

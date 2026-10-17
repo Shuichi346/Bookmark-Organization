@@ -14,7 +14,7 @@
 <select id="language"><option value="auto" {{ 'selected' if preference not in ['en','ja'] }}>{{ t('automatic') }}</option><option value="en" {{ 'selected' if preference == 'en' }}>English</option><option value="ja" {{ 'selected' if preference == 'ja' }}>日本語</option></select>
 </div></header>
 <div id="alert" class="alert" role="alert" hidden></div>
-<div class="workspace" data-project="{{ project or '' }}">
+<div class="workspace" data-project="{{ project or '' }}" data-base-proposal="{{ proposal.id if proposal else '' }}">
 <aside>
 <form id="import-form"><label for="html-file">{{ t('file') }}</label><input id="html-file" name="file" type="file" accept=".html,.htm" required><button class="primary">{{ t('import') }}</button></form>
 {% if project %}
@@ -84,6 +84,19 @@
 {% else %}
 <form id="scope-form"><div class="selection-band"><strong id="selected-count">{{ t('selected', count=total) }}</strong>
 <label>{{ t('destination') }}<select id="destination"><option value="root">{{ t('new_region') }}</option></select></label></div>
+{% if proposal %}<p class="saved-baseline" role="status">{{ t('continuation_ready') }}</p>{% endif %}
+<fieldset id="rule-editor"><legend>{{ t('rule_settings') }}</legend>
+<p id="rule-help" class="muted">{{ t('rule_help') }}</p>
+<div class="form-grid">
+{% for key in ['naming','folder'] %}
+<div>
+<label for="{{ key }}-mode">{{ t(key + '_prompt') }}</label>
+<select id="{{ key }}-mode" aria-describedby="rule-help"><option value="purpose" {{ 'selected' if rules.get(key + '_mode', rules.get('preset', 'purpose')) == 'purpose' }}>{{ t('preset_' + key) }}</option><option value="custom" {{ 'selected' if rules.get(key + '_mode', rules.get('preset')) == 'custom' }}>{{ t('preset_custom') }}</option></select>
+<label class="visually-hidden" for="{{ key }}-prompt">{{ t(key + '_custom_prompt') }}</label><textarea id="{{ key }}-prompt" rows="4" maxlength="4000" placeholder="{{ t(key + '_placeholder') }}" aria-describedby="rule-help">{{ rules.get(key + '_prompt', '') }}</textarea>
+</div>
+{% endfor %}
+</div><p class="muted">{{ t('rule_snapshot_help') }}</p>
+</fieldset>
 <button class="primary">{{ t('analyze') }}</button></form>
 {% if job %}
 <div id="job-region" hx-get="/ui/jobs/{{ job.id }}" hx-trigger="load, refresh" hx-swap="innerHTML">{% include 'progress.html' %}</div>
@@ -92,7 +105,7 @@
 <section id="proposal-section" data-proposal="{{ proposal.id }}"><h2>{{ t('review') }}</h2><p class="muted">{{ t('review_intro') }}</p>
 <div class="filters"><label class="visually-hidden" for="search">{{ t('search') }}</label><input id="search" type="search" placeholder="{{ t('search') }}"><label class="visually-hidden" for="status-filter">{{ t('status') }}</label><select id="status-filter"><option value="">{{ t('all_status') }}</option>{% for key in ['complete','retrieval_failed','analysis_failed'] %}<option value="{{ key }}">{{ t(key) }}</option>{% endfor %}</select></div>
 <div id="comparison" hx-get="/ui/proposals/{{ proposal.id }}" hx-trigger="load" hx-swap="innerHTML"></div>
-<p class="integrity">{{ t('integrity_ok') }}</p><a id="export" class="button primary" href="/api/proposals/{{ proposal.id }}/export">{{ t('export') }}</a>
+<p class="integrity">{{ t('integrity_ok') }}</p><div class="actions"><a id="export" class="button primary" href="/api/proposals/{{ proposal.id }}/export">{{ t('export') }}</a><button id="continue-organizing" type="button">{{ t('continue_organizing') }}</button></div><p class="muted">{{ t('continuation_help') }}</p>
 </section>
 {% endif %}
 {% endif %}
