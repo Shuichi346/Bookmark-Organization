@@ -1,6 +1,7 @@
 import asyncio
 import json
 import sqlite3
+from contextlib import suppress
 from functools import partial
 
 from bookmark_organization.bookmarks import uid
@@ -160,12 +161,34 @@ class Worker:
         self.wake = asyncio.Event()
         self.active_job: str | None = None
         self.active_task: asyncio.Task | None = None
+        self._shutdown_lock = asyncio.Lock()
 
     def cancel(self, job: str):
         # Cancel the batch task, not the worker loop, so later jobs can still run.
         if self.active_job == job and self.active_task and not self.active_task.done():
             if not self.active_task.cancelling():
                 self.active_task.cancel()
+
+    async def shutdown(self):
+        async with self._shutdown_lock:
+            self.stopping = True
+            self.wake.set()
+            with self.store.connect() as db:
+                db.execute("UPDATE jobs SET state='paused' WHERE state='running'")
+            task = self.active_task
+            if task:
+                if not task.done() and not task.cancelling():
+                    task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+            # Cancellation interrupts waits without discarding completed stages.
+            # Exclude terminal jobs, including those the user already cancelled.
+            with self.store.connect() as db:
+                db.execute(
+                    "UPDATE job_items SET state='pending' "
+                    "WHERE state IN ('fetching','analyzing','embedding') "
+                    "AND job IN (SELECT id FROM jobs WHERE state='paused')"
+                )
 
     def recover(self):
         with self.store.connect() as db:
@@ -253,6 +276,8 @@ class Worker:
                             )
                         self.store.save_item(identifier, bid, "complete", error=None)
                     except AppError as exc:
+                        if self.stopping:
+                            return
                         self.store.save_item(
                             identifier, bid, "analysis_failed", error=exc.code
                         )
@@ -262,6 +287,8 @@ class Worker:
                         "UPDATE jobs SET state='complete' WHERE id=?", (identifier,)
                     )
         except AppError as exc:
+            if self.stopping:
+                return
             # A stopped model server is retryable and never a retrieval failure.
             for item in self.store.items(identifier):
                 if item["state"] not in TERMINAL:
@@ -296,6 +323,8 @@ class Worker:
                     ):
                         raise
                 except Exception:
+                    if self.stopping:
+                        return
                     if (
                         self.store.one(
                             "SELECT state FROM jobs WHERE id=?", (self.active_job,)

@@ -46,7 +46,9 @@ npm run build
 uv run --locked bookmark-organization
 ```
 
-Open [http://127.0.0.1:8765](http://127.0.0.1:8765). Stop the server with **Ctrl+C**. It listens only on loopback and manages one background worker; run only one server process per data directory.
+Open the URL printed in the terminal (normally [http://127.0.0.1:8765](http://127.0.0.1:8765)). Normal startup tries ports **8765–8769** in order and uses the first available one. If all five are occupied, it exits with instructions to set `BOOKMARK_PORT`. Starting again with the same data directory reports the existing server's URL without starting another worker.
+
+Stop the server with **Stop server** in the app header or **Ctrl+C** in the terminal. Interrupted jobs are paused with their saved progress retained; run the startup command again to reopen the app. It listens only on loopback and manages one background worker; run only one server process per data directory. The console startup uses an OS file lock on macOS/Linux; `server.lock` is runtime metadata and must stay in the data directory while running. An old file after a crash does not block restarting.
 
 Frontend assets are served locally without a CDN. Rebuild with `npm run build` after changing frontend sources.
 
@@ -120,7 +122,7 @@ The default `data/` directory stores the SQLite database, original imports, proc
 | Environment variable | Default |
 | --- | --- |
 | `BOOKMARK_DATA_DIR` | `data/` |
-| `BOOKMARK_PORT` | `8765` |
+| `BOOKMARK_PORT` | Unset: first available port from `8765` through `8769` |
 | `OPENROUTER_API_KEY` | Unset; optional fallback for OpenRouter |
 
 For example:
@@ -128,6 +130,8 @@ For example:
 ```sh
 BOOKMARK_DATA_DIR=./my-bookmark-data BOOKMARK_PORT=8766 uv run --locked bookmark-organization
 ```
+
+An explicit `BOOKMARK_PORT` uses only that port and fails if it is occupied; `0` asks the OS to select an available port. Always open the printed URL. Stop any server started before updating to the directory-lock implementation before starting the updated app; an older process does not hold that lock.
 
 Interface language defaults to **Automatic**: the highest-priority usable browser preference selects Japanese for `ja` tags and English for other languages. Missing or unusable preferences fall back to Japanese. Manual **English / 日本語** choices persist in a browser cookie. Switching languages preserves scope selection and saved work, and does not translate original data or previously generated names.
 

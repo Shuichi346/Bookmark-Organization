@@ -16,7 +16,9 @@ let baseProposal = document.querySelector<HTMLElement>(".workspace")!.dataset.ba
 const query = <T extends Element>(selector:string) => document.querySelector<T>(selector)!;
 const t = (key:string) => messages[key] || messages.unknown_error;
 const alertBox = query<HTMLElement>("#alert");
+let serverStopped=false;
 function showError(error:unknown) {
+ if(serverStopped) return;
  alertBox.textContent=t(error instanceof Error ? error.message : "unknown_error");
  alertBox.hidden=false;
 }
@@ -31,6 +33,25 @@ async function safely(action:()=>Promise<void>) {
  alertBox.hidden=true;
  try {await action();} catch(error) {showError(error);}
 }
+query<HTMLButtonElement>("#shutdown-server").addEventListener("click",()=>{
+ const button=query<HTMLButtonElement>("#shutdown-server");
+ button.disabled=true;button.textContent=t("shutdown_progress");
+ void safely(async()=>{
+  try {
+   await api("/api/server/shutdown");
+   serverStopped=true;
+   button.textContent=t("server_stopped");
+   document.querySelectorAll("[hx-get]").forEach(element=>htmx.trigger(element,"htmx:abort"));
+   htmx.remove(query(".workspace"));
+   query<HTMLElement>("header").inert=true;
+   const status=query<HTMLElement>("#shutdown-status");status.hidden=false;status.focus();
+   window.scrollTo(0,0);
+  } catch(error) {
+   button.disabled=false;button.textContent=t("shutdown_server");
+   throw error;
+  }
+ });
+});
 query<HTMLSelectElement>("#language").addEventListener("change",event=>void safely(async()=>{
  await api("/api/language","POST",{preference:(event.target as HTMLSelectElement).value});
  location.reload();

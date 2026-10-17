@@ -243,6 +243,156 @@ async def test_cancel_interrupts_inflight_work_and_worker_accepts_next_job(
             await runner
 
 
+@pytest.mark.parametrize(
+    "stage", ["availability", "fetching", "analyzing", "embedding"]
+)
+async def test_shutdown_interrupts_waits_preserves_stages_and_resumes(tmp_path, stage):
+    store = Store(tmp_path)
+    project = store.import_html(HTML, "test.html")
+    cancelled = create_job(
+        store, project, JobRequest(all=True, token="already-cancelled")
+    )
+    control(store, cancelled, "cancel")
+    cancelled_state = job_state(store, cancelled)
+    job = create_job(store, project, JobRequest(all=True, token="shutdown-running"))
+    snapshot = job_state(store, job)["snapshot"]
+    original = store.tree(project)
+    saved = store.items(job)[1]
+    bookmark = next(n for n in original if n["id"] == saved["bookmark"])
+    seed_ai = FakeAI(store.settings())
+    page = await FakeFetcher(store.settings()).fetch(bookmark["url"])
+    analysis = await seed_ai.analyze(bookmark, page)
+    embedding = await seed_ai.embed(page, analysis)
+    store.save_item(
+        job,
+        saved["bookmark"],
+        "complete",
+        retrieval=page,
+        analysis=analysis,
+        embedding=embedding,
+    )
+    second_project = store.import_html(HTML + b"\n", "second.html")
+    queued = create_job(
+        store, second_project, JobRequest(all=True, token="shutdown-queued")
+    )
+    entered = asyncio.Event()
+    interrupted = asyncio.Event()
+    cleanup_entered = asyncio.Event()
+    closed = []
+    block = True
+    resumed_fetches = []
+    resumed_analyses = []
+    resumed_embeddings = []
+
+    async def wait_at(current):
+        if block and stage == current:
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                interrupted.set()
+
+    class BlockingFetcher(FakeFetcher):
+        async def fetch(self, url):
+            await wait_at("fetching")
+            if not block:
+                resumed_fetches.append(url)
+            return await super().fetch(url)
+
+        async def close(self):
+            cleanup_entered.set()
+            await asyncio.sleep(0.01)
+            closed.append("fetcher")
+
+    class BlockingAI(FakeAI):
+        async def ensure_available(self, endpoint, *, role="generation"):
+            await wait_at("availability")
+
+        async def analyze(self, bookmark, page):
+            await wait_at("analyzing")
+            if not block:
+                resumed_analyses.append(bookmark["id"])
+            return await super().analyze(bookmark, page)
+
+        async def embed(self, page, analysis):
+            await wait_at("embedding")
+            if not block:
+                resumed_embeddings.append(dict(analysis))
+            return await super().embed(page, analysis)
+
+        async def close(self):
+            await asyncio.sleep(0.01)
+            closed.append("ai")
+
+    worker = Worker(store, BlockingFetcher, BlockingAI)
+    runner = asyncio.create_task(worker.run())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        before = job_state(store, job)["items"]
+        stopping = asyncio.create_task(worker.shutdown())
+        await asyncio.wait_for(cleanup_entered.wait(), timeout=1)
+        # A second shutdown request must await cleanup without cancelling it again.
+        await asyncio.gather(stopping, worker.shutdown())
+        await asyncio.wait_for(interrupted.wait(), timeout=1)
+        with pytest.raises(asyncio.CancelledError):
+            await runner
+        assert sorted(closed) == ["ai", "fetcher"]
+        assert worker.stopping
+        assert worker.active_task is None
+        paused = job_state(store, job)
+        assert paused["state"] == "paused"
+        assert job_state(store, queued)["state"] == "paused"
+        assert paused["snapshot"] == snapshot
+        assert job_state(store, cancelled) == cancelled_state
+        assert store.tree(project) == original
+        assert (
+            store.one("SELECT original FROM projects WHERE id=?", (project,))[
+                "original"
+            ]
+            == HTML
+        )
+        for previous, current in zip(before, paused["items"], strict=True):
+            assert current == {
+                **previous,
+                "state": (
+                    "pending"
+                    if previous["state"] in {"fetching", "analyzing", "embedding"}
+                    else previous["state"]
+                ),
+            }
+            assert current["error"] != "worker_error"
+        await worker.shutdown()
+        assert job_state(store, job) == paused
+        assert sorted(closed) == ["ai", "fetcher"]
+
+        block = False
+        restarted = Worker(store, BlockingFetcher, BlockingAI)
+        restarted.recover()
+        control(store, job, "resume")
+        await restarted.process(store.one("SELECT * FROM jobs WHERE id=?", (job,)))
+        assert job_state(store, job)["state"] == "complete"
+        assert job_state(store, job)["snapshot"] == snapshot
+        for previous in paused["items"]:
+            if previous["retrieval"]:
+                url = next(
+                    n["url"] for n in original if n["id"] == previous["bookmark"]
+                )
+                assert url not in resumed_fetches
+            if previous["analysis"]:
+                assert previous["bookmark"] not in resumed_analyses
+        assert saved["bookmark"] not in resumed_analyses
+        assert len(resumed_embeddings) == sum(
+            i["state"] == "complete" and not previous["embedding"]
+            for i, previous in zip(store.items(job), paused["items"], strict=True)
+        )
+        assert job_state(store, cancelled) == cancelled_state
+    finally:
+        if not runner.done():
+            await worker.shutdown()
+            with pytest.raises(asyncio.CancelledError):
+                await runner
+
+
 def test_cancel_paused_job_preserves_results_and_is_terminal(tmp_path):
     store = Store(tmp_path)
     project = store.import_html(HTML, "test.html")

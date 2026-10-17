@@ -90,3 +90,14 @@ def make_worker(store):
 
 def smoke_factory():
     return create_app(worker_factory=make_worker)
+
+
+def shutdown_smoke_factory():
+    class WaitingAI(FakeAI):
+        async def analyze(self, bookmark, page):
+            await asyncio.Event().wait()
+            return await super().analyze(bookmark, page)
+
+    return create_app(
+        worker_factory=lambda store: Worker(store, FakeFetcher, WaitingAI)
+    )

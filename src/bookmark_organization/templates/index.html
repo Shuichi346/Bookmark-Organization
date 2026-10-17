@@ -12,8 +12,10 @@
 <button id="settings-toggle" type="button" aria-expanded="false" aria-controls="settings-panel">{{ t('settings') }}</button>
 <label class="visually-hidden" for="language">{{ t('language') }}</label>
 <select id="language"><option value="auto" {{ 'selected' if preference not in ['en','ja'] }}>{{ t('automatic') }}</option><option value="en" {{ 'selected' if preference == 'en' }}>English</option><option value="ja" {{ 'selected' if preference == 'ja' }}>日本語</option></select>
+<button id="shutdown-server" type="button" class="danger" {{ 'disabled' if not shutdown_available }} title="{{ t('shutdown_help' if shutdown_available else 'server_shutdown_unavailable') }}">{{ t('shutdown_server') }}</button>
 </div></header>
 <div id="alert" class="alert" role="alert" hidden></div>
+<section id="shutdown-status" role="status" tabindex="-1" hidden><h1>{{ t('server_stopped') }}</h1><p>{{ t('server_stopped_help') }}</p><p>{{ t('server_restart_help') }}</p><code>uv run --locked bookmark-organization</code></section>
 <div class="workspace" data-project="{{ project or '' }}" data-base-proposal="{{ proposal.id if proposal else '' }}">
 <aside>
 <form id="import-form"><label for="html-file">{{ t('file') }}</label><input id="html-file" name="file" type="file" accept=".html,.htm" required><button class="primary">{{ t('import') }}</button></form>

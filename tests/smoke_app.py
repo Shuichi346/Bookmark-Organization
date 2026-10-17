@@ -28,16 +28,10 @@ async def verify():
         process = subprocess.Popen(
             [
                 sys.executable,
-                "-m",
-                "uvicorn",
-                "helpers:smoke_factory",
-                "--factory",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(port),
-                "--log-level",
-                "warning",
+                "-c",
+                "from bookmark_organization.app import serve; "
+                "from helpers import smoke_factory; "
+                f"serve(smoke_factory(), port={port})",
             ],
             env=env,
             stdout=log,
@@ -813,5 +807,151 @@ async def verify():
     )
 
 
+async def verify_shutdown():
+    from bookmark_organization.db import Store
+
+    with tempfile.TemporaryDirectory() as directory:
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        base = f"http://127.0.0.1:{port}"
+        env = dict(os.environ, BOOKMARK_DATA_DIR=directory, PYTHONPATH="src:tests")
+        async with async_playwright() as pw:
+            browser = await pw.chromium.launch(headless=True)
+            for language, width, height in [("en-US", 1440, 900), ("ja-JP", 390, 844)]:
+                with tempfile.TemporaryFile() as log:
+                    process = subprocess.Popen(
+                        [
+                            sys.executable,
+                            "-c",
+                            "from bookmark_organization.app import serve; "
+                            "from helpers import shutdown_smoke_factory; "
+                            f"serve(shutdown_smoke_factory(), port={port})",
+                        ],
+                        env=env,
+                        stdout=log,
+                        stderr=log,
+                    )
+                    context = None
+                    try:
+                        async with httpx.AsyncClient(base_url=base) as client:
+                            for _ in range(100):
+                                try:
+                                    if (await client.get("/health")).status_code == 200:
+                                        break
+                                except httpx.HTTPError:
+                                    pass
+                                await asyncio.sleep(0.1)
+                            else:
+                                raise AssertionError(
+                                    "shutdown test server startup timeout"
+                                )
+                        context = await browser.new_context(
+                            locale=language, viewport={"width": width, "height": height}
+                        )
+                        page = await context.new_page()
+                        errors = []
+                        page.on("pageerror", lambda error: errors.append(str(error)))
+                        await page.goto(base)
+                        assert page.url == base + "/"
+                        assert await page.title() == "Bookmark Organization"
+                        await expect(page.locator("#shutdown-server")).to_be_enabled()
+                        if language == "en-US":
+                            await page.locator("#html-file").set_input_files(
+                                {
+                                    "name": "shutdown.html",
+                                    "mimeType": "text/html",
+                                    "buffer": HTML,
+                                }
+                            )
+                            await page.locator("#import-form button").click()
+                            await page.wait_for_url("**/?project=*")
+                            await page.locator("#scope-form button").click()
+                            await page.wait_for_url("**&job=*")
+                        else:
+                            await expect(page.locator(".job")).to_have_attribute(
+                                "data-state", "paused"
+                            )
+                            await page.locator('[data-action="resume"]:enabled').click()
+                        job = await page.locator(".job").get_attribute("data-job")
+                        for _ in range(100):
+                            state = await (
+                                await context.request.get(base + "/api/jobs/" + job)
+                            ).json()
+                            if any(i["state"] == "analyzing" for i in state["items"]):
+                                break
+                            await asyncio.sleep(0.05)
+                        else:
+                            raise AssertionError("synthetic analysis did not start")
+                        assert await page.evaluate(
+                            "document.documentElement.scrollWidth <= innerWidth"
+                        )
+                        if os.environ.get("BOOKMARK_QA_SCREENSHOTS"):
+                            image = (
+                                Path(os.environ["BOOKMARK_QA_SCREENSHOTS"])
+                                / f"shutdown-button-{width}.png"
+                            )
+                            image.parent.mkdir(parents=True, exist_ok=True)
+                            await page.locator(
+                                "#shutdown-server"
+                            ).scroll_into_view_if_needed()
+                            await page.screenshot(path=str(image))
+                        await page.locator("#shutdown-server").click()
+                        await expect(page.locator("#shutdown-status")).to_be_visible()
+                        await expect(page.locator("#shutdown-status h1")).to_have_text(
+                            "Server stopped"
+                            if language == "en-US"
+                            else "サーバーを停止しました"
+                        )
+                        await expect(page.locator(".workspace")).to_have_count(0)
+                        assert await page.locator("vite-error-overlay").count() == 0
+                        assert await page.evaluate(
+                            "document.documentElement.scrollWidth <= innerWidth"
+                        )
+                        if os.environ.get("BOOKMARK_QA_SCREENSHOTS"):
+                            await page.screenshot(
+                                path=str(
+                                    Path(os.environ["BOOKMARK_QA_SCREENSHOTS"])
+                                    / f"shutdown-stopped-{width}.png"
+                                )
+                            )
+                        for _ in range(100):
+                            if process.poll() is not None:
+                                break
+                            await asyncio.sleep(0.05)
+                        assert process.poll() == 0
+                        saved = Store(Path(directory))
+                        row = saved.one(
+                            "SELECT state,snapshot FROM jobs WHERE id=?", (job,)
+                        )
+                        assert row["state"] == "paused"
+                        assert json.loads(row["snapshot"]) == state["snapshot"]
+                        assert all(i["state"] == "pending" for i in saved.items(job))
+                        assert any(i["retrieval"] for i in saved.items(job))
+                        assert errors == [], errors
+                        async with httpx.AsyncClient() as client:
+                            try:
+                                await client.get(base + "/health")
+                            except httpx.ConnectError:
+                                pass
+                            else:
+                                raise AssertionError("server still accepts connections")
+                    finally:
+                        if context:
+                            await context.close()
+                        if process.poll() is None:
+                            process.terminate()
+                            process.wait(timeout=5)
+            await browser.close()
+    print(
+        "Shutdown UI passed: active job paused, port closed, process exited, restart/resume preserved progress in English/Japanese at desktop/mobile widths."
+    )
+
+
+async def run_checks():
+    await verify()
+    await verify_shutdown()
+
+
 if __name__ == "__main__":
-    asyncio.run(asyncio.wait_for(verify(), timeout=175))
+    asyncio.run(asyncio.wait_for(run_checks(), timeout=225))

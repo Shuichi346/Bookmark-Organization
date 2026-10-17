@@ -16,6 +16,20 @@ Verified: 167 tests, Python static checks, frontend lint/typecheck/build, and th
 
 Actual selected-provider verification passed with Codex `gpt-6-luna`/low for two independent custom analyses and LM Studio `text-embedding-embeddinggemma-2` for normalized 768-dimensional vectors. Requested exact names `FastAPI`/`TypeScript` and paths `Python/Frameworks`/`JS libraries/Language` survived proposal generation and integrity-checked export. These were public-text fixtures, not live page retrieval or processing of user bookmarks. The initial full-model check stopped while LM Studio was unavailable; after startup, a test-only missing snapshot setting was corrected and the complete run passed. The custom check is available through `tests/smoke_local_models.py --settings data/settings.json --custom`; `--analysis-only` isolates generation.
 
+### Application server shutdown
+
+The console entrypoint owns a `uvicorn.Server` instance and installs its shutdown callback; the CSRF-protected POST endpoint never sends process-wide signals to an unmanaged ASGI host. It stops accepting mutations, awaits `Worker.shutdown()` and acknowledges the request before setting `should_exit`. The worker pauses running jobs, interrupts active waits and awaits client/process cleanup exactly once, retaining completed stage data and immutable snapshots. Interrupted stages return to pending; cancelled jobs stay terminal. The same worker cleanup is used by lifespan shutdown. The stopped screen removes polling UI and provides the startup command.
+
+Verified: 178 tests, Python static checks, frontend lint/typecheck/build and the real-server browser workflow passed. Dedicated English desktop and Japanese mobile checks clicked the stop button during a blocked analysis, observed exit code 0 and a closed port, then restarted against the same temporary data and resumed the paused job. Unit tests covered all four active stages, repeated/concurrent shutdown, saved-stage reuse, original data and snapshots, cleanup, CSRF and unsupported external hosts. Playwright supplied browser evidence because Browser plugin was unavailable; existing HTMX eval build warnings remained. No new model calls were needed. The Uvicorn documentation host and fallback extraction were unavailable; installed 0.54.0 source and real-server behavior confirmed the owned-server callback.
+
+### Port fallback and duplicate console startup
+
+`server.py` binds and retains the first available loopback socket from 8765–8769 before the console entrypoint creates the app, so failed binds cannot start recovery or workers. Only address-in-use errors advance to the next candidate. Explicit `BOOKMARK_PORT` or `serve(port=...)` selections stay fixed; port 0 retains OS selection. The owned Uvicorn instance receives the reserved socket without a release/rebind race, preserving the existing shutdown callback and client cleanup.
+
+A nonblocking OS file lock on `server.lock` covers the data directory through shutdown, including symlink aliases. A second console launch reports the saved loopback URL without creating an app. The file is never unlinked: stale metadata after a crash cannot retain an OS lock or block restart. This uses Unix `fcntl` on the supported macOS environment; external ASGI hosts and processes started before this implementation do not acquire this guard.
+
+Verified: 190 tests, ruff check/format, ty and the existing real-server browser workflow passed, including English/Japanese shutdown and restart/resume at desktop/mobile widths. `tests/test_server.py` covers real occupied-socket fallback/exhaustion, explicit/invalid ports, non-conflict errors, directory alias locking, crash recovery and subprocess duplicate/start/stop/restart using temporary data. Normal startup returned 200 for health and the page; a second launch reported the existing URL. Installed Uvicorn 0.54.0 source and subprocess tests confirmed socket handoff. Frontend sources and model integrations were unchanged by this work; no new build or model inference was needed.
+
 ## 2026-10-13
 
 ### Codex subscription analysis

@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.background import BackgroundTask
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from bookmark_organization.db import Store
@@ -28,6 +29,7 @@ from bookmark_organization.schemas import (
     ProposalRequest,
     SettingsUpdate,
 )
+from bookmark_organization.server import AlreadyRunning, StartupError, running_server
 
 PACKAGE = Path(__file__).parent
 
@@ -40,18 +42,22 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
     async def lifespan(application):
         worker.recover()
         task = asyncio.create_task(worker.run())
-        yield
-        worker.stopping = True
-        worker.wake.set()
-        task.cancel()
         try:
-            await task
-        except asyncio.CancelledError:
-            pass
+            yield
+        finally:
+            await worker.shutdown()
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     application = FastAPI(lifespan=lifespan)
     application.state.store = store
     application.state.worker = worker
+    application.state.shutdown_callback = None
+    application.state.shutting_down = False
+    shutdown_lock = asyncio.Lock()
     application.add_middleware(
         TrustedHostMiddleware,
         allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"],
@@ -73,6 +79,11 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
                 or (origin and urlsplit(origin).netloc != request.headers.get("host"))
             ):
                 return JSONResponse({"code": "csrf_failed"}, status_code=403)
+            if (
+                application.state.shutting_down
+                and request.url.path != "/api/server/shutdown"
+            ):
+                return JSONResponse({"code": "server_stopping"}, status_code=503)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -105,6 +116,18 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
     @application.get("/health")
     async def health():
         return {"status": "ok"}
+
+    @application.post("/api/server/shutdown")
+    async def shutdown():
+        callback = application.state.shutdown_callback
+        if callback is None:
+            raise AppError("server_shutdown_unavailable", 503)
+        async with shutdown_lock:
+            if not application.state.shutting_down:
+                application.state.shutting_down = True
+                await worker.shutdown()
+        # Send the acknowledgement before asking our own server to exit.
+        return JSONResponse({"status": "stopped"}, background=BackgroundTask(callback))
 
     @application.get("/")
     async def home(
@@ -151,6 +174,7 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
                 "rules": rules,
                 "csrf": token,
                 "settings": store.public_settings(),
+                "shutdown_available": application.state.shutdown_callback is not None,
                 "preference": request.cookies.get("language", "auto"),
                 "js": manifest["file"],
                 "css": manifest.get("css", []),
@@ -218,6 +242,8 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
 
     @application.post("/api/projects/{project}/jobs")
     async def start(project: str, values: JobRequest):
+        if application.state.shutting_down:
+            raise AppError("server_stopping", 503)
         identifier = create_job(store, project, values)
         worker.wake.set()
         return {"id": identifier}
@@ -334,12 +360,56 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
     return application
 
 
-def main():
-    uvicorn.run(
-        create_app(),
+def _serve(application: FastAPI, listener):
+    config = uvicorn.Config(
+        application,
         host="127.0.0.1",
-        port=int(os.environ.get("BOOKMARK_PORT", "8765")),
+        port=listener.getsockname()[1],
     )
+    server = uvicorn.Server(config)
+
+    async def request_shutdown():
+        server.should_exit = True
+
+    application.state.shutdown_callback = request_shutdown
+    print(f"Bookmark Organization: http://127.0.0.1:{config.port}", flush=True)
+    server.run(sockets=[listener])
+
+
+def serve(application: FastAPI | None = None, port: int | None = None):
+    directory = (
+        application.state.store.directory
+        if application is not None
+        else Path(os.environ.get("BOOKMARK_DATA_DIR", "data"))
+    )
+    if port is None and "BOOKMARK_PORT" in os.environ:
+        try:
+            port = int(os.environ["BOOKMARK_PORT"])
+        except ValueError:
+            raise SystemExit(
+                "BOOKMARK_PORT must be an integer from 0 to 65535."
+            ) from None
+    try:
+        with running_server(directory, port) as listener:
+            _serve(
+                application if application is not None else create_app(directory),
+                listener,
+            )
+    except AlreadyRunning as exc:
+        if exc.url:
+            print(f"Bookmark Organization is already running: {exc.url}", flush=True)
+        else:
+            print(
+                "Bookmark Organization is already starting or stopping for this "
+                "data directory. Try again shortly.",
+                flush=True,
+            )
+    except StartupError as exc:
+        raise SystemExit(str(exc)) from None
+
+
+def main():
+    serve()
 
 
 if __name__ == "__main__":

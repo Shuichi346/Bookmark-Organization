@@ -165,5 +165,13 @@
   "preset_naming": "Preset: purpose｜site, tool or resource name",
   "preset_folder": "Preset: task-based folders",
   "naming_custom_prompt": "Custom naming instructions",
-  "folder_custom_prompt": "Custom folder grouping instructions"
+  "folder_custom_prompt": "Custom folder grouping instructions",
+  "shutdown_server": "Stop server",
+  "shutdown_help": "Stop the application server. Running jobs will be paused and saved progress will be kept.",
+  "server_stopping": "The server is stopping. New changes cannot be submitted.",
+  "server_stopped": "Server stopped",
+  "server_stopped_help": "Saved results have been kept. Interrupted jobs are paused and can be resumed after restarting the app. You can close this tab.",
+  "server_restart_help": "To start the app again, run this command from the project folder:",
+  "server_shutdown_unavailable": "Use the bookmark-organization startup command to enable server shutdown from the app.",
+  "shutdown_progress": "Stopping…"
 }

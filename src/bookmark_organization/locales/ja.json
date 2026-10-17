@@ -165,5 +165,13 @@
   "preset_naming": "プリセット：具体的な用途｜サイト・ツール・資料名",
   "preset_folder": "プリセット：用途に基づくフォルダー分け",
   "naming_custom_prompt": "名前付けのカスタム指示",
-  "folder_custom_prompt": "フォルダー分けのカスタム指示"
+  "folder_custom_prompt": "フォルダー分けのカスタム指示",
+  "shutdown_server": "サーバーを停止",
+  "shutdown_help": "アプリのサーバーを終了します。処理中のジョブは一時停止し、保存済みの進捗を保持します。",
+  "server_stopping": "サーバーを停止しています。新しい操作は受け付けられません。",
+  "server_stopped": "サーバーを停止しました",
+  "server_stopped_help": "保存済みの結果は保持されています。中断したジョブは一時停止され、アプリの再起動後に再開できます。このタブを閉じて構いません。",
+  "server_restart_help": "再度使う場合は、プロジェクトのフォルダーで次の起動コマンドを実行してください。",
+  "server_shutdown_unavailable": "画面から停止するには、bookmark-organizationの起動コマンドでアプリを起動してください。",
+  "shutdown_progress": "停止中…"
 }

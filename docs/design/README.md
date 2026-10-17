@@ -47,3 +47,7 @@ Generation and embedding model fields each pair a native text input with a label
 ## Codex provider amendment
 
 Only the content-analysis provider selector offers Codex (ChatGPT plan). Selecting it fixes the model to `gpt-6-luna` and reasoning to `low`, marks the model field read-only, hides the endpoint/candidate fields and unsupported sampling/output-token controls, and explains subscription usage and `codex login`. Switching away restores the ordinary controls and retains their values. The embedding selector remains independently configured with LM Studio, Ollama or OpenRouter. Discovery checks CLI login and the catalog; only successful analysis verifies actual model access. Save/reload preserves the fixed selection. Missing CLI, non-ChatGPT login, quota and response-wait failures use synchronized English/Japanese catalog messages.
+
+## Server shutdown
+
+The header includes a localized Stop server button, styled as a secondary destructive action and wrapping with other controls on mobile. It pauses interrupted jobs and retains saved results. During shutdown the control is disabled; after acknowledgement, the page replaces the workspace and polling regions with a stopped message and restart instructions. Header navigation becomes inert. The button is disabled for an external ASGI host that has not registered a server-exit callback; the standard console startup command owns that callback.
