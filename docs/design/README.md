@@ -8,6 +8,8 @@ Header: brand, Settings, language selector. Main: Import HTML empty state; impor
 
 Japanese and English copy lives in the matching JSON catalogs. Language switch preserves scope in session storage; jobs/proposals live in SQLite. Empty, validation, retrieval and model failures show catalog messages with actionable retry controls. No executable imported HTML enters the UI.
 
+Every upload opens a new project, including identical files; the import form explains that previous results remain separately saved. Proposal actions include a labeled export-range selector, defaulting to All bookmarks, with Changed blocks only as the second option. Its help text defines blocks as cumulative organized bookmarks (including failures) and their current ancestor folders, excluding unprocessed siblings. The selected range survives manual proposal saves, and both downloads require full-proposal integrity validation before filtering.
+
 Analysis output contains only the suggested name, summary, purpose and destination category. Summary and purpose feed embeddings for related-item ordering. Page type and tags are not generated; the expandable comparison details display only summary and purpose.
 
 Desktop (1440×900): header 72px, sidebar 280px, main flexible; local scroll for dense tables. Mobile (390×844): header wraps, sidebar stacks, controls fill available width, table scroll remains contained. Primary controls remain keyboard focusable with visible focus. Motion: only native progress, no animation required.
@@ -46,7 +48,7 @@ Generation and embedding model fields each pair a native text input with a label
 
 ## Codex provider amendment
 
-Only the content-analysis provider selector offers Codex (ChatGPT plan). Selecting it fixes the model to `gpt-6-luna` and reasoning to `low`, marks the model field read-only, hides the endpoint/candidate fields and unsupported sampling/output-token controls, and explains subscription usage and `codex login`. Switching away restores the ordinary controls and retains their values. The embedding selector remains independently configured with LM Studio, Ollama or OpenRouter. Discovery checks CLI login and the catalog; only successful analysis verifies actual model access. Save/reload preserves the fixed selection. Missing CLI, non-ChatGPT login, quota and response-wait failures use synchronized English/Japanese catalog messages.
+Only the content-analysis provider selector offers Codex (ChatGPT plan). Selecting it fixes the model to `gpt-6-luna` and reasoning to `medium`, marks the model field read-only, hides the endpoint/candidate fields and unsupported sampling/output-token controls, and explains subscription usage and `codex login`. Switching away restores the ordinary controls and retains their values. The embedding selector remains independently configured with LM Studio, Ollama or OpenRouter. Discovery checks CLI login and the catalog; only successful analysis verifies actual model access. Save/reload preserves the fixed selection. Missing CLI, non-ChatGPT login, quota and response-wait failures use synchronized English/Japanese catalog messages.
 
 ## Server shutdown
 

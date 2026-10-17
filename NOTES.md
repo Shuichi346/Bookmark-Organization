@@ -2,6 +2,20 @@
 
 ## 2026-10-17
 
+### Independent imports and export ranges
+
+Upload reuse came from `projects.hash` uniqueness and SHA lookup, not bookmark or file names. `Store` now keeps the hash as metadata and creates fresh project/node IDs on every upload. Initialization atomically removes the legacy unique constraint while retaining row order, IDs, original bytes, timestamps and saved job/proposal associations. Reopening an existing project still restores its saved work.
+
+`integrity.export_scope` validates the complete proposal before deriving a subset from cumulative target IDs and their current ancestor closure. This intentionally includes targeted retrieval/analysis failures and unchanged targeted entries: “Changed blocks only” means all saved organization ranges, not a field-level diff or just the latest round. Unprocessed siblings and unrelated empty folders are omitted; duplicate URLs remain separate. Full/base integrity gates and serializer round-trip validation stay mandatory. Manual saves retain the export selector's current value.
+
+Verified: 193 tests, ruff check/format, ty, frontend lint/typecheck/build and the real-server Playwright workflow passed in English/Japanese at 1440×900 and 390×844. Checks covered legacy migration with saved results, identical-name/content reimport with clean UI state, full and cumulative partial downloads, edited download links, failed entries, duplicate URLs and untouched siblings. External screenshots confirmed the export controls and help text without overflow; no unexpected browser errors occurred. Browser plugin was unavailable, so the existing Playwright harness supplied evidence. Its initial reimport assertion matched the old URL before navigation; waiting for the new project state fixed the test race. The existing HTMX eval build warning remained. Model integration was unchanged; tests used temporary data and fake inference.
+
+### Codex medium reasoning
+
+`CODEX_REASONING` now fixes Codex generation to `medium` at the user's request. The shared CLI override applies to subsequent Codex calls, including resumed/retried work; saved job snapshots and results were not rewritten. English/Japanese labels, current documentation and CLI assertions now match medium; earlier low-reasoning verification below remains historical.
+
+Verified: 190 tests, ruff check/format, ty and the English/Japanese real-server browser workflow passed. Codex CLI 0.162.1 with ChatGPT sign-in completed two independent actual `gpt-6-luna`/medium analyses, returning the required four fields without tool actions. The actual-model check used public-text fixtures and did not exercise live retrieval, embeddings or export. Frontend sources were unchanged, so no asset rebuild was needed.
+
 ### Custom rules and continuous organization
 
 `OrganizationRules` snapshots naming and folder prompts independently; `bookmark-custom-v1` replaces only the explicitly customized policy dimensions. The purpose preset keeps its schema and sparse-subfolder merging, while custom folder paths retain small subfolders. Page content remains untrusted and each request remains independent. Prompt and output bounds still apply.

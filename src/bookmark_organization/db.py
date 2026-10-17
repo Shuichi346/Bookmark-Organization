@@ -18,7 +18,7 @@ class Store:
             db.executescript("""
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS projects (
-              id TEXT PRIMARY KEY, hash TEXT UNIQUE, original BLOB, tree TEXT,
+              id TEXT PRIMARY KEY, hash TEXT, original BLOB, tree TEXT,
               filename TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP);
             CREATE TABLE IF NOT EXISTS folders (
               id TEXT PRIMARY KEY, project TEXT, snapshot TEXT);
@@ -44,6 +44,24 @@ class Store:
               proposal TEXT, bookmark TEXT, value TEXT,
               PRIMARY KEY(proposal,bookmark));
             """)
+            # Older databases deduplicated uploads by content. Rebuild only the
+            # project table to remove that constraint, retaining IDs and history.
+            db.execute("BEGIN IMMEDIATE")
+            for index in db.execute("PRAGMA index_list(projects)").fetchall():
+                columns = db.execute(
+                    "SELECT name FROM pragma_index_info(?)", (index["name"],)
+                ).fetchall()
+                if index["unique"] and [c["name"] for c in columns] == ["hash"]:
+                    db.execute("""CREATE TABLE projects_new (
+                        id TEXT PRIMARY KEY, hash TEXT, original BLOB, tree TEXT,
+                        filename TEXT, created TEXT DEFAULT CURRENT_TIMESTAMP)""")
+                    db.execute("""INSERT INTO projects_new
+                        (rowid,id,hash,original,tree,filename,created)
+                        SELECT rowid,id,hash,original,tree,filename,created
+                        FROM projects""")
+                    db.execute("DROP TABLE projects")
+                    db.execute("ALTER TABLE projects_new RENAME TO projects")
+                    break
         settings = directory / "settings.json"
         if not settings.exists():
             settings.write_text(Settings().model_dump_json(indent=2))
@@ -108,11 +126,6 @@ class Store:
         tree = parse(raw)
         digest = sha(raw)
         with self.connect() as db:
-            old = db.execute(
-                "SELECT id FROM projects WHERE hash=?", (digest,)
-            ).fetchone()
-            if old:
-                return old["id"]
             project = uid()
             db.execute(
                 "INSERT INTO projects(id,hash,original,tree,filename) VALUES(?,?,?,?,?)",

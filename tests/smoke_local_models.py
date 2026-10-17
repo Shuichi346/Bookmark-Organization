@@ -186,14 +186,14 @@ async def verify_codex(settings: Settings):
         for call in calls:
             assert not all(fixture[0] in call["prompt"] for fixture in FIXTURES)
             assert call["args"][call["args"].index("--model") + 1] == "gpt-6-luna"
-            assert 'model_reasoning_effort="low"' in call["args"]
+            assert 'model_reasoning_effort="medium"' in call["args"]
             assert 'forced_login_method="chatgpt"' in call["args"]
         print(
             json.dumps(
                 {
                     "result": "Codex analysis passed",
                     "model": settings.generation.model,
-                    "reasoning": "low",
+                    "reasoning": "medium",
                     "authentication": "ChatGPT",
                     "independent_requests": len(calls),
                     "samples": samples,
@@ -352,7 +352,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--codex",
         action="store_true",
-        help="Verify gpt-6-luna/low with ChatGPT login on two fixtures; no embedding or export calls",
+        help="Verify gpt-6-luna/medium with ChatGPT login on two fixtures; no embedding or export calls",
     )
     args = parser.parse_args()
     if args.custom and args.codex:

@@ -270,13 +270,19 @@ async function refreshComparison() {
 }
 document.querySelector("#search")?.addEventListener("input",()=>{page=1;void refreshComparison().catch(showError);});
 document.querySelector("#status-filter")?.addEventListener("change",()=>{page=1;void refreshComparison().catch(showError);});
+function updateExport() {
+ const section=query<HTMLElement>("#proposal-section");
+ const scope=query<HTMLSelectElement>("#export-scope").value;
+ query<HTMLAnchorElement>("#export").href="/api/proposals/"+section.dataset.proposal+"/export?scope="+encodeURIComponent(scope);
+}
+document.querySelector("#export-scope")?.addEventListener("change",updateExport);
 document.body.addEventListener("click",event=>{
  const target=(event.target as Element).closest<HTMLButtonElement>("button");
  if(target?.dataset.page) {page=Number(target.dataset.page);void refreshComparison().catch(showError);}
  if(target?.classList.contains("save-item")) void safely(async()=>{
   const section=query<HTMLElement>("#proposal-section");const row=target.closest<HTMLElement>("tr")!;
   const result=await api("/api/proposals/"+section.dataset.proposal+"/items/"+row.dataset.bookmark,"PATCH",{name:row.querySelector<HTMLInputElement>(".edit-name")!.value,parent:row.querySelector<HTMLSelectElement>(".edit-parent")!.value});
-  section.dataset.proposal=result.id;query<HTMLAnchorElement>("#export").href="/api/proposals/"+result.id+"/export";
+  section.dataset.proposal=result.id;updateExport();
   baseProposal=result.id;
   tree.splice(0,tree.length,...result.tree);
   updateScope();

@@ -112,7 +112,7 @@ async def test_codex_analysis_isolated_fixed_and_no_api_keys(codex_stub, monkeyp
         for call in calls():
             args = call["args"]
             assert args[args.index("--model") + 1] == "gpt-6-luna"
-            assert 'model_reasoning_effort="low"' in args
+            assert 'model_reasoning_effort="medium"' in args
             assert 'forced_login_method="chatgpt"' in args
             assert 'model_provider="openai"' in args
             assert 'web_search="disabled"' in args

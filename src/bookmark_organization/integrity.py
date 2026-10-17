@@ -41,3 +41,22 @@ def validate(original: list[dict], proposed: list[dict], targets: list[str]) -> 
         if current != untouched:
             raise AppError("integrity_failed", 409)
     return export(proposed)
+
+
+def export_scope(
+    original: list[dict], proposed: list[dict], targets: list[str], *, changed: bool
+) -> bytes:
+    # Always validate the complete proposal before excluding untouched content.
+    raw = validate(original, proposed, targets)
+    if not changed:
+        return raw
+    nodes = {n["id"]: n for n in proposed}
+    included = set(targets)
+    for identifier in targets:
+        parent = nodes[identifier]["parent"]
+        while parent != "root" and parent not in included:
+            included.add(parent)
+            parent = nodes[parent]["parent"]
+    # Ancestors retain their attributes and order, but unrelated siblings are
+    # omitted. Targeted failures stay included even if their names did not change.
+    return export([n for n in proposed if n["id"] in included])

@@ -1,5 +1,7 @@
 # Bookmark Organization — Requirements and Implementation Plan
 
+Current-scope amendment (2026-10-17): Codex generation now uses fixed `gpt-6-luna` with medium reasoning at the user's request. The earlier low-reasoning evidence below remains historical. See NOTES.md for current verification.
+
 Current-scope amendment (2026-10-17): completed independent naming/folder instructions with the existing policy as a preset, plus continuous organization from saved proposals. Each round snapshots its base tree and instructions; unselected bookmarks and prior edits remain unchanged. A → B → F with C untouched, project reopening, cumulative export and stale-write guards passed acceptance. Current evidence and preservation rationale are in the 2026-10-17 section of NOTES.md.
 
 Current-scope amendment (2026-10-13): the user added Codex as an explicit generation provider using CLI ChatGPT sign-in without API keys, fixed to `gpt-6-luna` with low reasoning. The implementation, synthetic workflow checks and two actual independent analyses are complete; embeddings remain separately selected. See NOTES.md for the constrained-output compatibility decision and evidence limits.

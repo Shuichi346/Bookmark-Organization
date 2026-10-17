@@ -1,12 +1,14 @@
 import copy
 import json
 
+import httpx
 import pytest
 from helpers import FakeAI, FakeFetcher
 
+from bookmark_organization.app import create_app
 from bookmark_organization.bookmarks import parse, structural, url_counts
 from bookmark_organization.db import Store
-from bookmark_organization.integrity import validate
+from bookmark_organization.integrity import export_scope, validate
 from bookmark_organization.jobs import Worker, control, create_job, job_state
 from bookmark_organization.proposals import (
     create_proposal,
@@ -116,6 +118,18 @@ async def test_saved_revisions_continue_a_b_f_with_per_job_rules(tmp_path):
     assert len(p["cumulative_targets"]) == 3
     exported = validate(p["import_original"], p["tree"], p["cumulative_targets"])
     assert structural(parse(exported)) == structural(p["tree"])
+    partial = parse(
+        export_scope(
+            p["import_original"], p["tree"], p["cumulative_targets"], changed=True
+        )
+    )
+    assert url_counts(partial) == url_counts(
+        [n for n in p["tree"] if n["id"] in p["cumulative_targets"]]
+    )
+    assert not any(n["name"] in {"C", "Keep"} for n in partial)
+    assert {"My edited Alpha", "Name B:Beta", "Name F:Tool"}.issubset(
+        n["name"] for n in partial
+    )
     assert store.tree(project) == original
     assert (
         store.one("SELECT original FROM projects WHERE id=?", (project,))["original"]
@@ -123,6 +137,40 @@ async def test_saved_revisions_continue_a_b_f_with_per_job_rules(tmp_path):
     )
     assert job_state(store, first_job)["snapshot"] == first_snapshot
     assert first_snapshot["rules"]["naming_prompt"] == "Name A"
+
+    # Reimport starts clean while the migrated project's jobs/results remain saved.
+    with store.connect() as db:
+        db.execute("CREATE UNIQUE INDEX legacy_hash ON projects(hash)")
+    store = Store(tmp_path)
+    fresh = store.import_html(HTML, "source.html")
+    assert fresh != project
+    assert store.latest_proposal(fresh) is None
+    assert store.rows("SELECT id FROM jobs WHERE project=?", (fresh,)) == []
+    assert store.latest_proposal(project) == third
+    assert get_proposal(store, third)["tree"] == p["tree"]
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_app(tmp_path)),
+        base_url="http://testserver",
+    ) as client:
+        for mode, expected in [
+            ("all", exported),
+            (
+                "changed",
+                export_scope(
+                    p["import_original"],
+                    p["tree"],
+                    p["cumulative_targets"],
+                    changed=True,
+                ),
+            ),
+        ]:
+            response = await client.get(f"/api/proposals/{third}/export?scope={mode}")
+            assert response.status_code == 200
+            assert response.content == expected
+        assert (
+            await client.get(f"/api/proposals/{third}/export?scope=invalid")
+        ).status_code == 422
 
     # Generated folders can be selected again; analysis receives the saved name
     # and folder path rather than the unchanged import's values.

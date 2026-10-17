@@ -14,7 +14,7 @@ from bookmark_organization.policy import FOLDER_PATHS, SOURCE_LABELS, VAGUE_LABE
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 CODEX_MODEL = "gpt-6-luna"
-CODEX_REASONING = "low"
+CODEX_REASONING = "medium"
 
 
 class AppError(Exception):

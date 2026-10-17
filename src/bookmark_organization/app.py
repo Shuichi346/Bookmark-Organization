@@ -5,6 +5,7 @@ import os
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 import uvicorn
@@ -18,7 +19,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from bookmark_organization.db import Store
 from bookmark_organization.i18n import CATALOGS, locale, translate
-from bookmark_organization.integrity import validate
+from bookmark_organization.integrity import export_scope
 from bookmark_organization.jobs import Worker, control, create_job, job_state
 from bookmark_organization.llm import LocalAI
 from bookmark_organization.proposals import create_proposal, edit_proposal, get_proposal
@@ -280,15 +281,23 @@ def create_app(directory: Path | None = None, worker_factory=Worker) -> FastAPI:
         return {"id": saved, "tree": get_proposal(store, saved)["tree"]}
 
     @application.get("/api/proposals/{identifier}/export")
-    async def download(identifier: str):
+    async def download(identifier: str, scope: Literal["all", "changed"] = "all"):
         p = get_proposal(store, identifier)
-        raw = validate(p["original"], p["tree"], p["targets"])
+        raw = export_scope(
+            p["import_original"],
+            p["tree"],
+            p["cumulative_targets"],
+            changed=scope == "changed",
+        )
+        filename = (
+            "organized-blocks.html"
+            if scope == "changed"
+            else "organized-bookmarks.html"
+        )
         return Response(
             raw,
             media_type="text/html",
-            headers={
-                "Content-Disposition": 'attachment; filename="organized-bookmarks.html"'
-            },
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
     @application.get("/ui/jobs/{identifier}")

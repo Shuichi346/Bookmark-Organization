@@ -304,7 +304,7 @@ async def verify():
                         ).select_option("codex")
                         await expect(page.locator("#codex-settings")).to_be_visible()
                         await expect(page.locator("#codex-settings")).to_contain_text(
-                            "low"
+                            "medium"
                         )
                         await expect(
                             page.locator("#openrouter-settings")
@@ -530,6 +530,8 @@ async def verify():
                         prior_parent = await page.locator(
                             ".edit-parent"
                         ).first.input_value()
+                        await expect(page.locator("#export-scope")).to_have_value("all")
+                        await page.locator("#export-scope").select_option("changed")
                         await page.locator(".edit-parent").first.select_option(ids[0])
                         await page.locator(".edit-name").first.fill(
                             "Edited 日本語 name"
@@ -545,6 +547,11 @@ async def verify():
                         await expect(page.locator(".edit-name").first).to_have_value(
                             "Edited 日本語 name"
                         )
+                        await expect(page.locator("#export")).to_have_attribute(
+                            "href",
+                            f"/api/proposals/{await page.locator('#proposal-section').get_attribute('data-proposal')}/export?scope=changed",
+                        )
+                        await page.locator("#export-scope").select_option("all")
                         await page.locator("#search").fill("Edited")
                         await expect(
                             page.locator("#comparison tbody tr")
@@ -588,6 +595,35 @@ async def verify():
                         assert url_counts(parse(Path(path).read_bytes())) == url_counts(
                             parse(HTML)
                         )
+                        await page.locator("#export-scope").select_option("changed")
+                        async with page.expect_download() as partial_download:
+                            await page.locator("#export").click()
+                        download = await partial_download.value
+                        assert download.suggested_filename == "organized-blocks.html"
+                        partial = parse(Path(await download.path()).read_bytes())
+                        assert url_counts(partial) == url_counts(
+                            [n for n in result["tree"] if n["id"] in result["targets"]]
+                        )
+                        assert not any(n["name"] in {"Keep", "Mail"} for n in partial)
+                        assert any(n["name"] == "Missing" for n in partial)
+                        for width, height in [(1440, 900), (390, 844)]:
+                            await page.set_viewport_size(
+                                {"width": width, "height": height}
+                            )
+                            await page.locator(
+                                "#export-help"
+                            ).scroll_into_view_if_needed()
+                            await expect(page.locator("#export-scope")).to_be_visible()
+                            assert await page.evaluate(
+                                "document.documentElement.scrollWidth <= innerWidth"
+                            )
+                            if os.environ.get("BOOKMARK_QA_SCREENSHOTS"):
+                                screenshot = (
+                                    Path(os.environ["BOOKMARK_QA_SCREENSHOTS"])
+                                    / f"export-{lang}-{width}.png"
+                                )
+                                await page.screenshot(path=str(screenshot))
+                        await page.locator("#export-scope").select_option("all")
                         original_href = await page.locator(".small-link").get_attribute(
                             "href"
                         )
@@ -757,6 +793,20 @@ async def verify():
                         assert url_counts(
                             parse(Path(await download.path()).read_bytes())
                         ) == url_counts(parse(HTML))
+                        await page.locator("#export-scope").select_option("changed")
+                        async with page.expect_download() as partial_download:
+                            await page.locator("#export").click()
+                        download = await partial_download.value
+                        partial = parse(Path(await download.path()).read_bytes())
+                        assert url_counts(partial) == url_counts(
+                            [
+                                n
+                                for n in continued["tree"]
+                                if n["id"] in continued["cumulative_targets"]
+                            ]
+                        )
+                        assert sum(n["kind"] == "bookmark" for n in partial) == 5
+                        assert not any(n["name"] == "Mail" for n in partial)
                         await page.goto(base + "/?project=" + state["project"])
                         await expect(
                             page.locator("#proposal-section")
@@ -771,6 +821,40 @@ async def verify():
                         await page.locator("#scope-form button").click()
                         await expect(page.locator("#alert")).to_be_visible()
                         assert (await page.locator("#alert").text_content()).strip()
+                        # Identical bytes/name must open a clean project, preserving old work.
+                        await page.locator("#html-file").set_input_files(
+                            {
+                                "name": "synthetic.html",
+                                "mimeType": "text/html",
+                                "buffer": HTML,
+                            }
+                        )
+                        await page.locator("#import-form button").click()
+                        await expect(page.locator(".workspace")).not_to_have_attribute(
+                            "data-project", state["project"]
+                        )
+                        fresh_project = await page.locator(".workspace").get_attribute(
+                            "data-project"
+                        )
+                        assert fresh_project != state["project"]
+                        assert (
+                            await page.locator("#proposal-section, .job").count() == 0
+                        )
+                        assert await page.locator(".folder-check:checked").count() == 0
+                        await expect(page.locator("#naming-prompt")).to_have_value("")
+                        fresh_tree = json.loads(
+                            await page.locator("#tree-data").text_content()
+                        )
+                        assert {n["id"] for n in fresh_tree}.isdisjoint(
+                            n["id"] for n in nodes
+                        )
+                        assert url_counts(fresh_tree) == url_counts(parse(HTML))
+                        saved_result = await (
+                            await context.request.get(
+                                base + "/api/proposals/" + next_proposal
+                            )
+                        ).json()
+                        assert saved_result["tree"] == continued["tree"]
                         assert errors == [], errors
                         unexpected_console = [
                             text
